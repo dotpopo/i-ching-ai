@@ -98,44 +98,56 @@
     <aside id="info-panel" aria-label="卦象详情">
       <div class="panel-head">
         <div class="panel-head-main">
-          <span id="hexagram-number" class="hex-badge">#1</span>
+          <span id="hexagram-number" class="hex-badge">—</span>
           <div>
-            <h2 id="panel-title">乾</h2>
-            <p id="hexagram-trigrams" class="hex-sub">乾为天</p>
+            <h2 id="panel-title">未择卦</h2>
+            <p id="hexagram-trigrams" class="hex-sub">六十四卦星阵</p>
           </div>
         </div>
         <button id="panel-close" class="icon-btn" aria-label="收起面板">✕</button>
       </div>
 
       <div class="panel-body">
-        <div class="hex-stage">
-          <div id="hexagram-lines" class="hex-lines" aria-label="卦象爻线"></div>
-          <div class="hex-stage-meta">
-            <div class="meta-row"><span>卦性</span><b id="hexagram-nature">纯阳</b></div>
-            <div class="meta-row"><span>取象</span><b id="hexagram-symbol">天、父、君</b></div>
+        <!-- 空态：进阵后还没择卦。不预选任何一卦，让用户自己点。 -->
+        <div id="empty-state" class="empty-state">
+          <span class="empty-mark" aria-hidden="true">卦</span>
+          <b>未择卦</b>
+          <p>六十四卦已成星阵。点阵中任意一卦开始，或直接求签。</p>
+          <button id="empty-roll" class="primary-btn wide">求 签</button>
+          <p class="empty-hint">← → 转阵 · 空格求签 · / 搜卦</p>
+        </div>
+
+        <!-- 已择卦 -->
+        <div id="hex-view" class="hex-view" hidden>
+          <div class="hex-stage">
+            <div id="hexagram-lines" class="hex-lines" aria-label="卦象爻线"></div>
+            <div class="hex-stage-meta">
+              <div class="meta-row"><span>卦性</span><b id="hexagram-nature">纯阳</b></div>
+              <div class="meta-row"><span>取象</span><b id="hexagram-symbol">天、父、君</b></div>
+            </div>
           </div>
-        </div>
 
-        <div class="panel-tabs" role="tablist" aria-label="解读维度">
-          <button class="ptab is-active" data-view="classic" role="tab">古义</button>
-          <button class="ptab" data-view="modern" role="tab">今解</button>
-          <button class="ptab" data-view="plain" role="tab">白话</button>
-          <button class="ptab" data-view="action" role="tab">行止</button>
-        </div>
-
-        <!-- 主动通神：不点就不调 AI -->
-        <div class="divine-bar" id="divine-bar">
-          <span class="divine-seal" id="divine-seal" aria-hidden="true">神</span>
-          <div class="divine-text">
-            <b id="divine-title">未通神</b>
-            <span id="divine-sub">下面是内置解读。想让 AI 就这一卦展开，点右边。</span>
+          <div class="panel-tabs" role="tablist" aria-label="解读维度">
+            <button class="ptab is-active" data-view="classic" role="tab">古义</button>
+            <button class="ptab" data-view="modern" role="tab">今解</button>
+            <button class="ptab" data-view="plain" role="tab">白话</button>
+            <button class="ptab" data-view="action" role="tab">行止</button>
           </div>
-          <button id="divine-btn" class="divine-btn">通 神</button>
+
+          <!-- 主动通神：不点就不调 AI -->
+          <div class="divine-bar" id="divine-bar">
+            <span class="divine-seal" id="divine-seal" aria-hidden="true">神</span>
+            <div class="divine-text">
+              <b id="divine-title">未通神</b>
+              <span id="divine-sub">下面是内置解读。想让 AI 就这一卦展开，点右边。</span>
+            </div>
+            <button id="divine-btn" class="divine-btn">通 神</button>
+          </div>
+
+          <div class="oracle-text" id="ai-text" aria-live="polite"></div>
         </div>
 
-        <div class="oracle-text" id="ai-text" aria-live="polite"></div>
-
-        <div class="panel-actions">
+        <div class="panel-actions" id="panel-actions" hidden>
           <button id="collect-btn" class="ghost-btn"><span class="act-ico" aria-hidden="true">缘</span>结缘收藏</button>
           <button id="ask-btn" class="primary-btn"><span class="act-ico" aria-hidden="true">问</span>以此卦问卜</button>
         </div>

@@ -42,6 +42,10 @@ const hexTrigrams = $('hexagram-trigrams');
 const hexNature = $('hexagram-nature');
 const hexSymbol = $('hexagram-symbol');
 const hexLines = $('hexagram-lines');
+const emptyState = $('empty-state');
+const hexView = $('hex-view');
+const panelActions = $('panel-actions');
+const emptyRoll = $<HTMLButtonElement>('empty-roll');
 const aiText = $('ai-text');
 const divineBar = $('divine-bar');
 const divineTitle = $('divine-title');
@@ -86,7 +90,10 @@ type OracleTexts = Record<ViewKey, string>;
 
 let scene: IChingScene | null = null;
 let currentTab: 'explore' | 'analysis' | 'tutor' = 'explore';
-let selectedHexNum = 1;
+/** 当前选中的卦号。0 表示还没择卦。 */
+let selectedHexNum = 0;
+/** 是否已经择卦。false 时面板显示空态，任何依赖卦象的操作都要挡住。 */
+let hasSelection = false;
 let activeView: ViewKey = 'classic';
 let bonded = new Set<number>();
 let blindboxHexNum: number | null = null;
@@ -205,11 +212,10 @@ function init() {
     });
 
     stage('绑定交互', () => bindEvents());
-    stage('渲染首屏卦象', () => selectHexagram(1, false));
+    stage('渲染首屏', () => renderEmptyPanel());
     stage('渲染式神录', () => renderBondBar());
     stage('同步 AI 状态', () => syncApiState());
     stage('生成问卜示例', () => buildAskChips());
-    stage('绘制命盘', () => drawCharts(1));
 
     setTimeout(() => loadingOverlay.classList.add('is-gone'), 620);
     console.log('[boot] 全部完成', bootTrace.length, '个阶段');
@@ -295,6 +301,11 @@ function bindEvents() {
   // 通神：唯一会调 AI 解读的入口
   divineBtn.addEventListener('click', () => {
     void divineHexagram();
+  });
+
+  // 空态里的求签按钮，和底部求签台是同一件事
+  emptyRoll.addEventListener('click', () => {
+    void rollOracle();
   });
 
   $('collect-btn').addEventListener('click', toggleBond);
@@ -402,11 +413,32 @@ function enterApp() {
 /** 防重入：选中流程里会碰到 DOM 重建与异步请求，必须挡住递归 */
 let selecting = false;
 
+/**
+ * 空态：刚进阵，还没择卦。
+ * 不预选任何一卦，把选择权交给用户。
+ */
+function renderEmptyPanel() {
+  hasSelection = false;
+  selectedHexNum = 0;
+
+  emptyState.hidden = false;
+  hexView.hidden = true;
+  panelActions.hidden = true;
+
+  panelTitle.textContent = '未择卦';
+  hexNumber.textContent = '—';
+  hexTrigrams.textContent = '六十四卦星阵';
+  hexLines.innerHTML = '';
+
+  infoPanel.classList.remove('is-closed');
+}
+
 function selectHexagram(num: number, focus: boolean) {
   if (selecting) return;
   selecting = true;
   try {
     selectedHexNum = num;
+    hasSelection = true;
     const hex = hexagrams.find((h) => h.number === num);
     if (!hex) return;
 
@@ -462,6 +494,9 @@ function updatePanel(hex: Hexagram) {
   });
 
   infoPanel.classList.remove('is-closed');
+  emptyState.hidden = true;
+  hexView.hidden = false;
+  panelActions.hidden = false;
   syncCollectBtn();
 
   // 通神结果按卦缓存；没通过神就显示内置文本。
@@ -634,6 +669,7 @@ async function divineHexagram() {
 
 /** 同步通神栏的状态与文案 */
 function renderDivineBar() {
+  if (!hasSelection) return; // 空态下通神栏整块是隐藏的
   const hasCache = divineCache.has(selectedHexNum);
 
   divineBar.classList.toggle('is-loading', divineState === 'loading');
@@ -684,12 +720,28 @@ function switchTab(tab: typeof currentTab) {
     infoPanel.classList.remove('is-closed');
   } else if (tab === 'analysis') {
     analysisPanel.classList.remove('is-closed');
-    drawCharts(selectedHexNum);
+    if (hasSelection) drawCharts(selectedHexNum);
+    else renderChartEmpty();
   } else {
     tutorPanel.classList.remove('is-closed');
-    const hex = hexagrams.find((h) => h.number === selectedHexNum);
-    if (hex) updateAskCurrent(hex);
+    const hex = hasSelection ? hexagrams.find((h) => h.number === selectedHexNum) : undefined;
+    if (hex) {
+      updateAskCurrent(hex);
+    } else {
+      askCurrent.innerHTML = '<b>未择卦</b><span>先回「卦象」页点一卦，再来问卜</span>';
+    }
   }
+}
+
+/** 还没择卦时，命盘显示提示而不是空白画布 */
+function renderChartEmpty() {
+  const chart = document.getElementById('chart-canvas') as HTMLCanvasElement | null;
+  const radar = document.getElementById('radar-canvas') as HTMLCanvasElement | null;
+  chart?.getContext('2d')?.clearRect(0, 0, chart.width, chart.height);
+  radar?.getContext('2d')?.clearRect(0, 0, radar.width, radar.height);
+  chartInfo.innerHTML =
+    '<p><span class="k">提示</span> 先回「卦象」页点一卦，命盘就会显示它的结构与分布。</p>';
+  radarCaption.textContent = '';
 }
 
 /* ============================================================
@@ -1189,6 +1241,12 @@ function updateAskCurrent(hex: Hexagram) {
 }
 
 async function generateAnswer() {
+  if (!hasSelection) {
+    showToast('先回「卦象」页点一卦');
+    switchTab('explore');
+    return;
+  }
+
   const question = questionInput.value.trim();
   if (!question) {
     showToast('先写下你要问的事');

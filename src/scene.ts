@@ -180,7 +180,8 @@ export class IChingScene {
 
   raycaster: THREE.Raycaster;
   mouse: THREE.Vector2;
-  selectedHexagram = 1;
+  /** 当前选中的卦号。0 表示还没择卦，此时阵中不突出任何一张。 */
+  selectedHexagram = 0;
   hoveredHexagram: number | null = null;
   hoveredOrb = false;
   /** 灵枢点击反馈的衰减进度 */
@@ -1134,6 +1135,11 @@ export class IChingScene {
       mat.opacity += (0.34 - mat.opacity) * 0.06;
       this.descentBeam.visible = true;
       this.descentBeam.rotation.y += delta * 0.5 * motion;
+    } else if (this.descentBeam.visible) {
+      // 还没择卦（或卦号失效）时把光柱收掉
+      const mat = this.descentBeam.material as THREE.MeshBasicMaterial;
+      mat.opacity += (0 - mat.opacity) * 0.12;
+      if (mat.opacity < 0.01) this.descentBeam.visible = false;
     }
 
     // 悬停拾取
