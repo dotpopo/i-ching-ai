@@ -77,8 +77,11 @@ const handler: Handler = async (event) => {
     }
 
     // 获取目标 API 地址（优先使用请求中的 baseUrl，否则使用默认）
-    const baseUrl = body.baseUrl || 'https://api.deepseek.com';
+    // 移除 baseUrl 末尾的 /v1 后缀，避免重复
+    const rawBaseUrl = body.baseUrl || 'https://api.deepseek.com';
+    const baseUrl = (rawBaseUrl as string).replace(/\/v1\/?$/, '');
     const targetUrl = `${baseUrl}/v1/chat/completions`;
+    console.log('[Netlify Proxy] 目标 URL:', targetUrl);
 
     // 转发请求到目标 API
     const response = await fetch(targetUrl, {

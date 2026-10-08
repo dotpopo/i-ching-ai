@@ -58,36 +58,58 @@ export async function callChatCompletion(
 ): Promise<string> {
   const apiConfig = getApiConfig()
   const mergedConfig = { ...apiConfig, ...config }
+  // 移除 baseUrl 末尾的 /v1 后缀，避免代理拼接时重复
+  mergedConfig.baseUrl = mergedConfig.baseUrl.replace(/\/v1\/?$/, '')
 
   if (!mergedConfig.apiKey) {
     throw new Error('未配置 API Key')
   }
 
   // 开发环境用 Vite 中间件代理，生产环境用 Netlify Function
-  const proxyUrl = import.meta.env.DEV
-    ? '/api/proxy'
-    : '/.netlify/functions/proxy'
+  const proxyUrls = import.meta.env.DEV
+    ? ['/api/proxy', '/.netlify/functions/proxy']
+    : ['/.netlify/functions/proxy', '/api/proxy']
 
-  const response = await fetch(proxyUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${mergedConfig.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: mergedConfig.modelId,
-      baseUrl: mergedConfig.baseUrl,
-      messages,
-      temperature: 0.7,
-      max_tokens: 800,
-    }),
-  })
+  let lastError: Error | null = null
 
-  if (!response.ok) {
-    const errorBody = await response.text()
-    throw new Error(`API error ${response.status}: ${errorBody}`)
+  for (const proxyUrl of proxyUrls) {
+    try {
+      console.log(`[AI] 尝试代理: ${proxyUrl}`, {
+        model: mergedConfig.modelId,
+        baseUrl: mergedConfig.baseUrl,
+        hasKey: !!mergedConfig.apiKey,
+      })
+
+      const response = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${mergedConfig.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: mergedConfig.modelId,
+          baseUrl: mergedConfig.baseUrl,
+          messages,
+          temperature: 0.7,
+          max_tokens: 800,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.text()
+        console.warn(`[AI] 代理 ${proxyUrl} 返回 ${response.status}:`, errorBody)
+        lastError = new Error(`API error ${response.status}: ${errorBody}`)
+        continue
+      }
+
+      const data = await response.json()
+      console.log('[AI] 调用成功:', data)
+      return data.choices[0].message.content || '未能生成回复'
+    } catch (err: any) {
+      console.warn(`[AI] 代理 ${proxyUrl} 失败:`, err.message)
+      lastError = err
+    }
   }
 
-  const data = await response.json()
-  return data.choices[0].message.content || '未能生成回复'
+  throw lastError || new Error('所有代理均失败')
 }

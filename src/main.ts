@@ -873,6 +873,13 @@ async function generateAiCard() {
 
   const config = getApiConfig();
   let interpretation = '';
+  let apiError: string | null = null;
+
+  console.log('[生成卡片] API 配置状态:', {
+    hasKey: !!config.apiKey,
+    baseUrl: config.baseUrl,
+    modelId: config.modelId,
+  });
 
   if (config.apiKey) {
     try {
@@ -886,22 +893,29 @@ async function generateAiCard() {
           content: `问题：${question}\n\n卦象：第${hex.number}卦「${hex.name}」（${hex.chinese}）\n卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}\n性质：${hex.nature}\n象征：${hex.symbol}\n\n请结合这个问题和卦象，给出深刻的解读。`,
         },
       ], config);
-    } catch (err) {
-      // AI 失败时使用预设解读
+    } catch (err: any) {
+      // AI 失败时显示错误信息
+      console.error('[生成卡片] API 调用失败:', err);
+      apiError = err.message || '未知错误';
       interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
     }
   } else {
-    // 未配置 API Key 时使用预设解读
+    console.warn('[生成卡片] 未配置 API Key');
     interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
   }
 
   // 渲染卡片
+  const errorHtml = apiError
+    ? `<div class="ai-card-error">⚠️ AI 调用失败：${escapeHtml(apiError)}<br/>当前显示预设解读</div>`
+    : '';
+
   container.innerHTML = `
     <div class="ai-card">
       <div class="ai-card-hex">${hex.lines.map((l) => (l === 1 ? '─' : '──')).join('')}</div>
       <div class="ai-card-name">${hex.name}卦</div>
       <div class="ai-card-number">#${hex.number} · ${hex.chinese} · ${hex.nature}</div>
       <div class="ai-card-question">「${escapeHtml(question)}」</div>
+      ${errorHtml}
       <div class="ai-card-interpretation">${escapeHtml(interpretation)}</div>
       <div class="ai-card-footer">易经 AI 学堂 · 专属解读</div>
     </div>

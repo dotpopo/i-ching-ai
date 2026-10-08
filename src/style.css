@@ -1179,6 +1179,18 @@ html, body {
   opacity: 0.5;
 }
 
+.ai-card-error {
+  font-size: 10px;
+  color: var(--crimson);
+  text-align: center;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(196,30,58,0.08);
+  border-radius: 6px;
+  border: 1px solid rgba(196,30,58,0.15);
+  line-height: 1.5;
+}
+
 .card-actions {
   display: flex;
   gap: 8px;

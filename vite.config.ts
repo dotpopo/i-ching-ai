@@ -22,7 +22,9 @@ function apiProxyPlugin(): Plugin {
         req.on('end', async () => {
           try {
             const data = JSON.parse(body);
-            const baseUrl = data.baseUrl || 'https://api.deepseek.com';
+            // 移除 baseUrl 末尾的 /v1 后缀，避免重复
+            let baseUrl = data.baseUrl || 'https://api.deepseek.com';
+            baseUrl = baseUrl.replace(/\/v1\/?$/, '');
             const apiKey =
               (req.headers.authorization || '').replace('Bearer ', '') || data.apiKey;
 
@@ -34,6 +36,7 @@ function apiProxyPlugin(): Plugin {
             }
 
             const targetUrl = `${baseUrl}/v1/chat/completions`;
+            console.log('[API Proxy] 目标 URL:', targetUrl);
             const response = await fetch(targetUrl, {
               method: 'POST',
               headers: {
