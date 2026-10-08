@@ -11,6 +11,7 @@ import {
   callChatCompletion,
   callMany,
   testConnection,
+  probeServer,
 } from './api-config.js';
 import type { ChatMessage } from './api-config.js';
 
@@ -87,6 +88,9 @@ let activeView: ViewKey = 'classic';
 let bonded = new Set<number>();
 let blindboxHexNum: number | null = null;
 let isAiOn = false;
+/** AI 凭据来自服务端（用户没在 UI 里填自己的），用于文案区分 */
+let aiFromServer = false;
+let serverModel = '';
 let searchCursor = 0;
 let searchMatches: Hexagram[] = [];
 let introDone = false;
@@ -177,7 +181,7 @@ function init() {
       if (Array.isArray(arr)) bonded = new Set(arr.filter((n) => typeof n === 'number'));
     });
 
-    stage('读取 AI 配置', () => {
+    stage('读取本地 AI 配置', () => {
       isAiOn = !!getApiConfig().apiKey;
     });
 
@@ -203,6 +207,10 @@ function init() {
 
     setTimeout(() => loadingOverlay.classList.add('is-gone'), 620);
     console.log('[boot] 全部完成', bootTrace.length, '个阶段');
+
+    // 没有自带密钥时，问一下服务端有没有替我配好。
+    // 全新设备（手机第一次打开）走的就是这条路。
+    void probeServerCredentials();
   } catch (err) {
     console.error('[boot] 初始化失败', err);
     loadingOverlay.classList.add('is-gone');
@@ -1022,8 +1030,14 @@ async function generateAnswer() {
 
   const config = getApiConfig();
 
-  if (!config.apiKey) {
-    renderAnswerCard(hex, question, `${hex.interpretation}\n\n就你问的这件事，${hex.name}卦的意思偏向「${hex.symbol}」。先按这个方向想一想，接通 AI 后能得到更贴合你处境的一段话。`, '未接通神谕，当前是内置文本。点右上角「AI」填入接口即可实时生成。');
+  // 没接通时（自带密钥和服务端凭据都没有）退回内置文本，但仍然给一张卡
+  if (!isAiOn) {
+    renderAnswerCard(
+      hex,
+      question,
+      `${hex.interpretation}\n\n就你问的这件事，${hex.name}卦的意思偏向「${hex.symbol}」。先按这个方向想一想，接通 AI 后能得到更贴合你处境的一段话。`,
+      '神谕未接通，当前是内置文本。点右上角「AI」填入密钥即可实时生成。'
+    );
     cardActions.hidden = false;
     return;
   }
@@ -1428,7 +1442,14 @@ function openApiModal() {
   modalApiKey.value = '';
   modalBaseUrl.value = cfg.baseUrl;
   modalModelId.value = cfg.modelId;
-  modalApiStatus.textContent = cfg.apiKey ? '当前已接通。重新填写可覆盖。' : '尚未接通，卦象解读将使用内置文本。';
+
+  if (cfg.apiKey) {
+    modalApiStatus.textContent = '当前使用你自己填写的密钥。重新填写可覆盖。';
+  } else if (isAiOn && aiFromServer) {
+    modalApiStatus.textContent = `当前由服务端提供凭据（模型 ${serverModel || '未知'}）。你不需要填任何东西，填了会改用你自己的密钥。`;
+  } else {
+    modalApiStatus.textContent = '当前没有可用凭据，卦象解读使用内置文本。';
+  }
   modalApiStatus.className = 'modal-status';
   apiModal.classList.add('is-on');
   modalApiKey.focus();
@@ -1450,11 +1471,18 @@ async function saveApiFromModal() {
   saveApiConfig(patch);
 
   const cfg = getApiConfig();
+
   if (!cfg.apiKey) {
-    isAiOn = false;
+    // 用户清空了密钥：回落到服务端凭据（如果服务端有配）
+    const probe = await probeServer();
+    isAiOn = !!probe?.configured;
+    aiFromServer = isAiOn;
+    serverModel = probe?.model ?? '';
     syncApiState();
-    modalApiStatus.textContent = '未填写 API Key，继续使用内置解读。';
-    modalApiStatus.className = 'modal-status';
+    modalApiStatus.textContent = isAiOn
+      ? `已清空你自己的密钥，改回服务端凭据（模型 ${serverModel || '未知'}）。`
+      : '未填写 API Key，且服务端也没有配置凭据，继续使用内置解读。';
+    modalApiStatus.className = isAiOn ? 'modal-status is-ok' : 'modal-status';
     return;
   }
 
@@ -1464,6 +1492,8 @@ async function saveApiFromModal() {
   try {
     const reply = await testConnection(cfg);
     isAiOn = true;
+    aiFromServer = false;
+    serverModel = cfg.modelId;
     syncApiState();
     modalApiStatus.textContent = `接通成功，返回「${reply.slice(0, 12)}」。AI 解读已启用。`;
     modalApiStatus.className = 'modal-status is-ok';
@@ -1475,6 +1505,7 @@ async function saveApiFromModal() {
     }, 900);
   } catch (err) {
     isAiOn = !!getApiConfig().apiKey;
+    aiFromServer = false;
     syncApiState();
     modalApiStatus.textContent = `连接失败：${(err as Error)?.message || '未知错误'}`;
     modalApiStatus.className = 'modal-status is-err';
@@ -1484,8 +1515,35 @@ async function saveApiFromModal() {
 function syncApiState() {
   apiKeyBtn.classList.toggle('is-on', isAiOn);
   const label = apiKeyBtn.querySelector('.api-label');
-  if (label) label.textContent = isAiOn ? 'AI 已通' : 'AI';
-  apiKeyBtn.title = isAiOn ? 'AI 神谕已接通，点击可重新配置' : '点击填入接口，启用 AI 神谕';
+  if (label) {
+    label.textContent = isAiOn ? (aiFromServer ? 'AI 已通·服' : 'AI 已通') : 'AI';
+  }
+  apiKeyBtn.title = isAiOn
+    ? aiFromServer
+      ? `AI 神谕已接通（服务端提供，模型 ${serverModel || '未知'}），点击可改用自己的密钥`
+      : 'AI 神谕已接通（使用你填写的密钥），点击可重新配置'
+    : '点击填入接口，启用 AI 神谕';
+}
+
+/**
+ * 问服务端有没有替我们配好凭据。
+ * 手机这类全新设备没有 localStorage，全靠这一步才能用上 AI。
+ */
+async function probeServerCredentials() {
+  if (isAiOn) return; // 已有自带密钥，不必探
+
+  const probe = await probeServer();
+  if (!probe) return;
+
+  if (probe.configured) {
+    isAiOn = true;
+    aiFromServer = true;
+    serverModel = probe.model;
+    syncApiState();
+    // 探活结果晚于首屏，重新拉一次当前卦的解读
+    const hex = hexagrams.find((h) => h.number === selectedHexNum);
+    if (hex) requestAiTexts(hex);
+  }
 }
 
 /* ============================================================
