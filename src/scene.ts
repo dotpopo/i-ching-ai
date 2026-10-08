@@ -1,5 +1,6 @@
-/* ===== Three.js 场景 — 阴阳师风格 ===== */
+/* ===== Three.js 场景 — 阴阳师风格 + OrbitControls ===== */
 import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { hexagrams } from './data.js';
 import { HexagramMesh } from './hexagram.js';
 
@@ -7,6 +8,7 @@ export class IChingScene {
   scene!: THREE.Scene;
   camera!: THREE.PerspectiveCamera;
   renderer!: THREE.WebGLRenderer;
+  controls!: OrbitControls;
   clock: THREE.Clock;
   hexagramMeshes: HexagramMesh[] = [];
   centralOrb!: THREE.Mesh;
@@ -33,6 +35,7 @@ export class IChingScene {
     this.initRenderer(canvas);
     this.initScene();
     this.initCamera();
+    this.initControls();
     this.initLights();
     this.createCentralOrb();
     this.createHexagrams();
@@ -76,16 +79,26 @@ export class IChingScene {
   initCamera() {
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 500);
-    this.camera.position.set(0, 10, 32);
+    this.camera.position.set(0, 12, 35);
     this.camera.lookAt(0, 0, 0);
   }
 
+  initControls() {
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 8;
+    this.controls.maxDistance = 60;
+    this.controls.maxPolarAngle = Math.PI * 0.85;
+    this.controls.minPolarAngle = Math.PI * 0.1;
+    this.controls.target.set(0, 1, 0);
+    this.controls.update();
+  }
+
   initLights() {
-    // 微弱环境光
     const ambient = new THREE.AmbientLight(0x1a0a14, 0.4);
     this.scene.add(ambient);
 
-    // 主方向光 — 月光
     const dirLight = new THREE.DirectionalLight(0xffeedd, 0.8);
     dirLight.position.set(10, 20, 10);
     dirLight.castShadow = true;
@@ -99,29 +112,24 @@ export class IChingScene {
     dirLight.shadow.camera.bottom = -30;
     this.scene.add(dirLight);
 
-    // 红色点光 — 灯笼光
     const pointLight1 = new THREE.PointLight(0xc41e3a, 2.5, 50);
     pointLight1.position.set(5, 8, 5);
     this.scene.add(pointLight1);
 
-    // 金色点光
     const pointLight2 = new THREE.PointLight(0xe8c547, 1.5, 40);
     pointLight2.position.set(-8, 6, -5);
     this.scene.add(pointLight2);
 
-    // 紫色点光 — 神秘感
     const pointLight3 = new THREE.PointLight(0x7a5aaa, 1, 35);
     pointLight3.position.set(0, 3, -10);
     this.scene.add(pointLight3);
 
-    // 底部补光
     const pointLight4 = new THREE.PointLight(0x221133, 0.8, 25);
     pointLight4.position.set(0, -3, 0);
     this.scene.add(pointLight4);
   }
 
   createCentralOrb() {
-    // 太极球 — 中心发光体
     const geo = new THREE.SphereGeometry(1.5, 64, 64);
     const mat = new THREE.MeshStandardMaterial({
       color: 0xc41e3a,
@@ -135,7 +143,6 @@ export class IChingScene {
     this.centralOrb.castShadow = true;
     this.scene.add(this.centralOrb);
 
-    // 内核 — 金色
     const coreGeo = new THREE.SphereGeometry(0.6, 32, 32);
     const coreMat = new THREE.MeshStandardMaterial({
       color: 0xe8c547,
@@ -148,7 +155,6 @@ export class IChingScene {
     core.position.set(0, 2, 0);
     this.scene.add(core);
 
-    // 外层光环 — 红色
     const ringGeo = new THREE.TorusGeometry(2.2, 0.025, 16, 100);
     const ringMat = new THREE.MeshBasicMaterial({
       color: 0xc41e3a,
@@ -160,7 +166,6 @@ export class IChingScene {
     ring.rotation.x = Math.PI / 2;
     this.scene.add(ring);
 
-    // 第二层光环 — 金色
     const ring2Geo = new THREE.TorusGeometry(2.8, 0.02, 16, 100);
     const ring2Mat = new THREE.MeshBasicMaterial({
       color: 0xe8c547,
@@ -173,7 +178,6 @@ export class IChingScene {
     ring2.rotation.z = Math.PI / 6;
     this.scene.add(ring2);
 
-    // 第三层光环 — 紫色
     const ring3Geo = new THREE.TorusGeometry(3.4, 0.015, 16, 100);
     const ring3Mat = new THREE.MeshBasicMaterial({
       color: 0x7a5aaa,
@@ -220,7 +224,6 @@ export class IChingScene {
       positions[i * 3 + 2] = (Math.random() - 0.5) * 80;
       sizes[i] = Math.random() * 2 + 0.3;
 
-      // 混合颜色：红、金、紫
       const colorChoice = Math.random();
       let color: THREE.Color;
       if (colorChoice < 0.4) color = crimson;
@@ -252,7 +255,6 @@ export class IChingScene {
   }
 
   createGround() {
-    // 地面网格 — 阴柔的暗色地面
     const groundGeo = new THREE.PlaneGeometry(100, 100, 50, 50);
     const groundMat = new THREE.MeshStandardMaterial({
       color: 0x0a0610,
@@ -269,7 +271,6 @@ export class IChingScene {
     ground.receiveShadow = true;
     this.scene.add(ground);
 
-    // 网格线
     const gridHelper = new THREE.GridHelper(60, 30, 0x1a0a14, 0x0a0610);
     gridHelper.position.y = -4.99;
     gridHelper.material.transparent = true;
@@ -319,6 +320,7 @@ export class IChingScene {
     this.onHexagramSelect?.(num);
   }
 
+  /** 平滑移动相机到目标卦象 */
   focusOnHexagram(num: number) {
     const hex = hexagrams.find((h) => h.number === num);
     if (!hex) return;
@@ -331,31 +333,25 @@ export class IChingScene {
     const targetZ = Math.sin(angle) * radius;
     const targetY = Math.sin(angle * 2) * 1.2;
 
-    const startPos = this.camera.position.clone();
-    const endPos = new THREE.Vector3(targetX * 0.6, targetY + 5, targetZ * 0.6 + 15);
-    const startTarget = this.camera.position.clone();
+    const startTarget = this.controls.target.clone();
     const endTarget = new THREE.Vector3(targetX, targetY, targetZ);
 
-    const duration = 1000;
+    const duration = 1200;
     const startTime = performance.now();
 
-    const animateCamera = () => {
+    const animateFocus = () => {
       const elapsed = performance.now() - startTime;
       const t = Math.min(elapsed / duration, 1);
       const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
 
-      this.camera.position.lerpVectors(startPos, endPos, ease);
-      this.camera.lookAt(
-        THREE.MathUtils.lerp(startTarget.x, endTarget.x, ease),
-        THREE.MathUtils.lerp(startTarget.y, endTarget.y, ease),
-        THREE.MathUtils.lerp(startTarget.z, endTarget.z, ease)
-      );
+      this.controls.target.lerpVectors(startTarget, endTarget, ease);
+      this.controls.update();
 
       if (t < 1) {
-        requestAnimationFrame(animateCamera);
+        requestAnimationFrame(animateFocus);
       }
     };
-    animateCamera();
+    animateFocus();
   }
 
   start() {
@@ -378,6 +374,9 @@ export class IChingScene {
 
     const delta = this.clock.getDelta();
     const elapsed = this.clock.getElapsedTime();
+
+    // 更新控制器
+    this.controls.update();
 
     // 更新中央球体
     if (this.centralOrb) {
@@ -408,6 +407,7 @@ export class IChingScene {
   dispose() {
     this.stop();
     window.removeEventListener('resize', this._onResize);
+    this.controls.dispose();
 
     this.hexagramMeshes.forEach((mesh) => mesh.dispose());
     this.hexagramMeshes = [];
