@@ -108,17 +108,8 @@
       </div>
 
       <div class="panel-body">
-        <!-- 空态：进阵后还没择卦。不预选任何一卦，让用户自己点。 -->
-        <div id="empty-state" class="empty-state">
-          <span class="empty-mark" aria-hidden="true">卦</span>
-          <b>未择卦</b>
-          <p>六十四卦已成星阵。点阵中任意一卦开始，或直接求签。</p>
-          <button id="empty-roll" class="primary-btn wide">求 签</button>
-          <p class="empty-hint">← → 转阵 · 空格求签 · / 搜卦</p>
-        </div>
-
-        <!-- 已择卦 -->
-        <div id="hex-view" class="hex-view" hidden>
+        <!-- 已择卦。进阵时整块面板是收起的，让用户先看星阵。 -->
+        <div id="hex-view" class="hex-view">
           <div class="hex-stage">
             <div id="hexagram-lines" class="hex-lines" aria-label="卦象爻线"></div>
             <div class="hex-stage-meta">

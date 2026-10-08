@@ -687,52 +687,7 @@ canvas { display: block; }
   align-content: start;
 }
 
-/* ---------- 7b. 空态与已择卦视图 ---------- */
-.empty-state {
-  display: grid;
-  justify-items: center;
-  gap: 12px;
-  padding: 34px 20px 26px;
-  text-align: center;
-  border: 1px dashed rgba(240, 200, 105, 0.24);
-  border-radius: var(--r-md);
-  background: radial-gradient(circle at 50% 0%, rgba(240, 200, 105, 0.08), transparent 68%);
-}
-.empty-state[hidden] { display: none; }
-.empty-mark {
-  display: grid;
-  place-items: center;
-  inline-size: 68px;
-  block-size: 68px;
-  font-family: var(--font-display);
-  font-size: 28px;
-  font-weight: 700;
-  color: var(--ink-950);
-  background: radial-gradient(circle at 36% 30%, var(--gold-lit), var(--gold) 52%, var(--crimson));
-  border-radius: 50%;
-  box-shadow: 0 0 32px rgba(240, 200, 105, 0.42);
-  animation: corePulse 3.6s var(--ease-in-out) infinite;
-}
-.empty-state b {
-  font-family: var(--font-display);
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  color: var(--paper);
-}
-.empty-state p {
-  font-size: 12.5px;
-  line-height: 1.85;
-  color: var(--paper-muted);
-  max-inline-size: 252px;
-}
-.empty-state .primary-btn { max-inline-size: 208px; }
-.empty-hint {
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
-  color: rgba(139, 135, 121, 0.66);
-}
-
+/* ---------- 7b. 已择卦视图 ---------- */
 .hex-view { display: grid; gap: 16px; }
 .hex-view[hidden] { display: none; }
 .panel-actions[hidden] { display: none; }
@@ -1605,4 +1560,24 @@ canvas { display: block; }
     --panel: rgba(5, 8, 15, 0.97);
   }
   #grain, #scanline { display: none; }
+}
+
+/* ---------- 20. Netlify 注入的角标 ----------
+   Netlify 会往页面塞一个 iframe：
+     #nl-badge-frame  216x92   position:fixed 贴右下角  z-index:2147483645
+   内容是 "Powered by Netlify"。它是 iframe，外部 CSS 改不了里面的东西，
+   只能整体缩放。
+
+   为什么必须处理：手机上 216px 宽的角标会横跨到屏幕中间，
+   正好压住居中的求签按钮。
+
+   缩放的几个要点：
+   - transform-origin 锚在右下角，缩完仍然贴着角，不会跑位
+   - clip-path 会跟着一起缩放，被裁掉的透明区域本来就不吃点击事件，
+     所以缩小后交互不受影响
+   - 用 !important，因为脚本是用 style.cssText 写的行内样式 */
+#nl-badge-frame,
+#nl-hud-frame {
+  transform: scale(0.5) !important;
+  transform-origin: 100% 100% !important;
 }

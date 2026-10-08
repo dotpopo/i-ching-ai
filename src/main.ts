@@ -42,10 +42,8 @@ const hexTrigrams = $('hexagram-trigrams');
 const hexNature = $('hexagram-nature');
 const hexSymbol = $('hexagram-symbol');
 const hexLines = $('hexagram-lines');
-const emptyState = $('empty-state');
 const hexView = $('hex-view');
 const panelActions = $('panel-actions');
-const emptyRoll = $<HTMLButtonElement>('empty-roll');
 const aiText = $('ai-text');
 const divineBar = $('divine-bar');
 const divineTitle = $('divine-title');
@@ -212,7 +210,7 @@ function init() {
     });
 
     stage('绑定交互', () => bindEvents());
-    stage('渲染首屏', () => renderEmptyPanel());
+    stage('渲染首屏', () => showSceneOnly());
     stage('渲染式神录', () => renderBondBar());
     stage('同步 AI 状态', () => syncApiState());
     stage('生成问卜示例', () => buildAskChips());
@@ -301,11 +299,6 @@ function bindEvents() {
   // 通神：唯一会调 AI 解读的入口
   divineBtn.addEventListener('click', () => {
     void divineHexagram();
-  });
-
-  // 空态里的求签按钮，和底部求签台是同一件事
-  emptyRoll.addEventListener('click', () => {
-    void rollOracle();
   });
 
   $('collect-btn').addEventListener('click', toggleBond);
@@ -414,23 +407,21 @@ function enterApp() {
 let selecting = false;
 
 /**
- * 空态：刚进阵，还没择卦。
- * 不预选任何一卦，把选择权交给用户。
+ * 进阵初始状态：只给星阵，不预选任何一卦，也不弹卡片。
+ * 面板整块收起，用户点哪一卦，它才滑出来。
  */
-function renderEmptyPanel() {
+function showSceneOnly() {
   hasSelection = false;
   selectedHexNum = 0;
 
-  emptyState.hidden = false;
+  infoPanel.classList.add('is-closed');
   hexView.hidden = true;
   panelActions.hidden = true;
+  hexLines.innerHTML = '';
 
   panelTitle.textContent = '未择卦';
   hexNumber.textContent = '—';
   hexTrigrams.textContent = '六十四卦星阵';
-  hexLines.innerHTML = '';
-
-  infoPanel.classList.remove('is-closed');
 }
 
 function selectHexagram(num: number, focus: boolean) {
@@ -494,7 +485,6 @@ function updatePanel(hex: Hexagram) {
   });
 
   infoPanel.classList.remove('is-closed');
-  emptyState.hidden = true;
   hexView.hidden = false;
   panelActions.hidden = false;
   syncCollectBtn();
@@ -717,7 +707,12 @@ function switchTab(tab: typeof currentTab) {
   tutorPanel.classList.add('is-closed');
 
   if (tab === 'explore') {
-    infoPanel.classList.remove('is-closed');
+    if (hasSelection) {
+      infoPanel.classList.remove('is-closed');
+    } else {
+      // 还没择卦就不给空卡片，提示用户直接看星阵
+      showToast('点阵中任意一卦开始');
+    }
   } else if (tab === 'analysis') {
     analysisPanel.classList.remove('is-closed');
     if (hasSelection) drawCharts(selectedHexNum);
@@ -1345,135 +1340,7 @@ function openShareCard() {
 }
 
 function drawShareCard(hex: Hexagram, text: string) {
-  const W = 720;
-  const H = 960;
-  shareCanvas.width = W;
-  shareCanvas.height = H;
-  const ctx = shareCanvas.getContext('2d')!;
-
-  // 底
-  const bg = ctx.createLinearGradient(0, 0, W, H);
-  bg.addColorStop(0, '#070b18');
-  bg.addColorStop(0.5, '#0d142b');
-  bg.addColorStop(1, '#1a0f22');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, W, H);
-
-  // 径向光
-  const glow = ctx.createRadialGradient(W / 2, 300, 20, W / 2, 300, 460);
-  glow.addColorStop(0, 'rgba(232,56,79,0.28)');
-  glow.addColorStop(1, 'rgba(232,56,79,0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, W, H);
-
-  // 双框
-  ctx.strokeStyle = 'rgba(240,200,105,0.5)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(26, 26, W - 52, H - 52);
-  ctx.strokeStyle = 'rgba(240,200,105,0.2)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(38, 38, W - 76, H - 76);
-
-  // 四角金饰
-  ctx.strokeStyle = 'rgba(240,200,105,0.9)';
-  ctx.lineWidth = 3;
-  const corners: Array<[number, number, number, number]> = [
-    [46, 46, 1, 1], [W - 46, 46, -1, 1],
-    [46, H - 46, 1, -1], [W - 46, H - 46, -1, -1],
-  ];
-  corners.forEach(([x, y, dx, dy]) => {
-    ctx.beginPath();
-    ctx.moveTo(x + dx * 34, y);
-    ctx.lineTo(x, y);
-    ctx.lineTo(x, y + dy * 34);
-    ctx.stroke();
-  });
-
-  // 顶部标题
-  ctx.fillStyle = 'rgba(240,200,105,0.72)';
-  ctx.font = '500 15px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('天 机 星 阵 · 卦 象 符 卡', W / 2, 76);
-
-  // 卦名
-  ctx.save();
-  ctx.shadowColor = 'rgba(240,200,105,0.55)';
-  ctx.shadowBlur = 28;
-  ctx.fillStyle = '#ffe9a8';
-  ctx.font = '800 86px "Shippori Mincho", "Noto Serif SC", serif';
-  ctx.fillText(hex.name, W / 2, 178);
-  ctx.restore();
-
-  ctx.fillStyle = 'rgba(139,135,121,0.95)';
-  ctx.font = '500 16px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.fillText(`第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`, W / 2, 236);
-
-  // 六爻
-  const barW = 210;
-  const barH = 17;
-  const gap = 14;
-  let y = 292;
-  for (let i = hex.lines.length - 1; i >= 0; i--) {
-    const line = hex.lines[i];
-    const x0 = (W - barW) / 2;
-    if (line === 1) {
-      const grad = ctx.createLinearGradient(x0, y, x0 + barW, y);
-      grad.addColorStop(0, '#b98c2c');
-      grad.addColorStop(0.5, '#ffe9a8');
-      grad.addColorStop(1, '#b98c2c');
-      ctx.fillStyle = grad;
-      roundRectPath(ctx, x0, y, barW, barH, 4);
-      ctx.fill();
-    } else {
-      const half = (barW - 26) / 2;
-      ctx.fillStyle = '#a97fe8';
-      roundRectPath(ctx, x0, y, half, barH, 4);
-      ctx.fill();
-      roundRectPath(ctx, x0 + half + 26, y, half, barH, 4);
-      ctx.fill();
-    }
-    y += barH + gap;
-  }
-
-  // 分隔
-  ctx.strokeStyle = 'rgba(240,200,105,0.22)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(96, y + 12);
-  ctx.lineTo(W - 96, y + 12);
-  ctx.stroke();
-
-  // 正文
-  ctx.fillStyle = 'rgba(205,198,184,0.96)';
-  ctx.font = '400 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.textAlign = 'left';
-  const lines = wrapText(ctx, text, W - 176);
-  let ty = y + 50;
-  const maxY = H - 132;
-  for (const line of lines) {
-    if (ty > maxY) {
-      ctx.fillText('……', 88, ty);
-      break;
-    }
-    ctx.fillText(line, 88, ty);
-    ty += 31;
-  }
-
-  // 页脚
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(139,135,121,0.8)';
-  ctx.font = '500 14px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.fillText('结印求签 · 天机星阵', W / 2, H - 74);
-
-  // 朱印
-  ctx.fillStyle = 'rgba(163,18,42,0.92)';
-  roundRectPath(ctx, W / 2 - 26, H - 56, 52, 52, 7);
-  ctx.fill();
-  ctx.fillStyle = 'rgba(246,239,224,0.95)';
-  ctx.font = '700 28px "Shippori Mincho", "Noto Serif SC", serif';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('易', W / 2, H - 29);
+  paintCard(shareCanvas, hex, text);
 }
 
 function roundRectPath(
@@ -1519,12 +1386,10 @@ function downloadAnswerCard() {
   const hex = hexagrams.find((h) => h.number === selectedHexNum);
   if (!hex) return;
   const body = cardContainer.querySelector('.ac-body')?.textContent ?? hex.interpretation;
+
   const tmp = document.createElement('canvas');
-  tmp.width = 720;
-  tmp.height = 960;
-  const prev = shareCanvas;
-  void prev;
-  drawShareCardTo(tmp, hex, body);
+  paintCard(tmp, hex, body);
+
   const link = document.createElement('a');
   link.download = `天机星阵-${hex.name}-解签.png`;
   link.href = tmp.toDataURL('image/png');
@@ -1532,119 +1397,269 @@ function downloadAnswerCard() {
   showToast('解签已保存');
 }
 
-/** 与 drawShareCard 同版式，但画到任意 canvas（用于下载解签） */
-function drawShareCardTo(target: HTMLCanvasElement, hex: Hexagram, text: string) {
-  const backup = shareCanvas;
-  const realGet = target.getContext.bind(target);
-  void realGet;
-  // 复用同一套绘制逻辑：临时把 shareCanvas 指过去
-  const original = (window as unknown as { __sc?: HTMLCanvasElement }).__sc;
-  (window as unknown as { __sc?: HTMLCanvasElement }).__sc = backup;
-  const ctx = target.getContext('2d')!;
-  // 直接重画：为避免重复代码，这里调用一个共享实现
-  paintCard(ctx, target.width, target.height, hex, text);
-  void original;
+/* ---------- 符卡版式 ----------
+   构图：挂符居中当主体，上下各一段文字。
+     上方 = 卦名 + 卦序 / 卦象 / 性质
+     中间 = 挂符（纸底 + 卦名 + 六爻 + 朱印），和 3D 星阵里的符咒同一套视觉语言
+     下方 = 解读正文
+
+   宽度固定 720（手机上一般按 390 宽显示，缩到 0.54 倍）。
+   高度跟着正文走：短文案约 1160，长文案最多长到 1440。
+   正文字号自适应，保证"字尽量大"且"不溢出"。
+*/
+const CARD_W = 720;
+const CARD_MIN_H = 1160;
+const CARD_MAX_H = 1440;
+const CARD_TITLE_Y = 58;
+const CARD_NAME_Y = 140;
+const CARD_META_Y = 190;
+const CARD_TAL_W = 216;
+const CARD_TAL_H = 408;
+const CARD_TAL_Y = 236;
+const CARD_DIVIDER_Y = 686;
+const CARD_BODY_TOP = 726;
+const CARD_BOTTOM_RESERVE = 150;
+
+const CARD_FONT = (size: number) =>
+  `400 ${size}px "Zen Maru Gothic", "Noto Sans SC", sans-serif`;
+
+/** 居中画一枚挂符：纸底 + 卦名 + 六爻 + 朱印，顶部带挂环 */
+function drawTalisman(ctx: CanvasRenderingContext2D, cx: number, top: number, hex: Hexagram) {
+  const w = CARD_TAL_W;
+  const h = CARD_TAL_H;
+  const x = cx - w / 2;
+
+  // 背后灵光，让它从暗底上浮起来
+  const halo = ctx.createRadialGradient(cx, top + h * 0.46, 10, cx, top + h * 0.46, w * 1.5);
+  halo.addColorStop(0, 'rgba(240,200,105,0.28)');
+  halo.addColorStop(0.55, 'rgba(232,56,79,0.1)');
+  halo.addColorStop(1, 'rgba(232,56,79,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(x - w, top - 40, w * 3, h + 120);
+
+  // 挂环与挂绳
+  ctx.strokeStyle = 'rgba(240,200,105,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(cx, top - 34);
+  ctx.lineTo(cx, top - 12);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx, top - 6, 9, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 纸底
+  const paper = ctx.createLinearGradient(x, top, x + w, top + h);
+  paper.addColorStop(0, '#f7f0e2');
+  paper.addColorStop(0.45, '#ece1cb');
+  paper.addColorStop(1, '#dbcdb1');
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 26;
+  ctx.shadowOffsetY = 10;
+  ctx.fillStyle = paper;
+  roundRectPath(ctx, x, top, w, h, 14);
+  ctx.fill();
+  ctx.restore();
+
+  // 纸纹
+  ctx.save();
+  ctx.globalAlpha = 0.05;
+  ctx.strokeStyle = '#6b5a3e';
+  ctx.lineWidth = 1;
+  for (let y = top + 14; y < top + h - 14; y += 6) {
+    ctx.beginPath();
+    ctx.moveTo(x + 12, y);
+    ctx.lineTo(x + w - 12, y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // 双线金框
+  ctx.strokeStyle = 'rgba(185,140,44,0.85)';
+  ctx.lineWidth = 3;
+  roundRectPath(ctx, x + 11, top + 11, w - 22, h - 22, 9);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(185,140,44,0.36)';
+  ctx.lineWidth = 1;
+  roundRectPath(ctx, x + 19, top + 19, w - 38, h - 38, 6);
+  ctx.stroke();
+
+  // 卦名
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#1b1a17';
+  ctx.font = '800 62px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText(hex.name, cx, top + 78);
+
+  // 卦名下的朱红短横
+  ctx.fillStyle = 'rgba(163,18,42,0.75)';
+  ctx.fillRect(cx - 34, top + 122, 68, 3);
+
+  // 六爻
+  const barW = 116;
+  const barH = 17;
+  const barGap = 15;
+  const barsTop = top + 150;
+  for (let i = hex.lines.length - 1; i >= 0; i--) {
+    const row = hex.lines.length - 1 - i;
+    const y = barsTop + row * (barH + barGap);
+    if (hex.lines[i] === 1) {
+      const g = ctx.createLinearGradient(cx - barW / 2, y, cx + barW / 2, y);
+      g.addColorStop(0, '#b98c2c');
+      g.addColorStop(0.5, '#f0c869');
+      g.addColorStop(1, '#b98c2c');
+      ctx.fillStyle = g;
+      roundRectPath(ctx, cx - barW / 2, y, barW, barH, 4);
+      ctx.fill();
+    } else {
+      const half = (barW - 20) / 2;
+      ctx.fillStyle = '#6d4bb0';
+      roundRectPath(ctx, cx - barW / 2, y, half, barH, 4);
+      ctx.fill();
+      roundRectPath(ctx, cx - barW / 2 + half + 20, y, half, barH, 4);
+      ctx.fill();
+    }
+  }
+
+  // 朱印
+  const seal = 52;
+  const sealY = top + h - 26 - seal;
+  ctx.fillStyle = 'rgba(163,18,42,0.92)';
+  roundRectPath(ctx, cx - seal / 2, sealY, seal, seal, 7);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(247,240,226,0.96)';
+  ctx.font = '700 30px "Shippori Mincho", "Noto Serif SC", serif';
+  const yang = hex.lines.reduce((a: number, l) => a + l, 0);
+  ctx.fillText(yang > 3 ? '阳' : '阴', cx, sealY + seal / 2 + 1);
 }
 
-function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, hex: Hexagram, text: string) {
+function paintCard(canvas: HTMLCanvasElement, hex: Hexagram, text: string) {
+  const W = CARD_W;
+  const availW = W - 176;
+
+  // 用一张离屏 canvas 量文字，别反复改目标 canvas 的尺寸
+  const measure = document.createElement('canvas').getContext('2d')!;
+
+  let fontSize = 44;
+  let lineHeight = 71;
+  let lines: string[] = [];
+  let H = CARD_MIN_H;
+
+  while (fontSize >= 22) {
+    lineHeight = Math.round(fontSize * 1.62);
+    measure.font = CARD_FONT(fontSize);
+    lines = wrapText(measure, text, availW);
+    const bodyH = lines.length * lineHeight;
+    H = Math.max(CARD_MIN_H, CARD_BODY_TOP + bodyH + 48 + CARD_BOTTOM_RESERVE);
+    if (H <= CARD_MAX_H) break;
+    fontSize -= 2;
+  }
+
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d')!;
+
+  // --- 底 ---
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, '#070b18');
   bg.addColorStop(0.5, '#0d142b');
-  bg.addColorStop(1, '#1a0f22');
+  bg.addColorStop(1, '#1c0f24');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  const glow = ctx.createRadialGradient(W / 2, 300, 20, W / 2, 300, 460);
-  glow.addColorStop(0, 'rgba(232,56,79,0.28)');
+  const glow = ctx.createRadialGradient(W * 0.5, CARD_TAL_Y + CARD_TAL_H * 0.5, 20, W * 0.5, CARD_TAL_Y + CARD_TAL_H * 0.5, 480);
+  glow.addColorStop(0, 'rgba(232,56,79,0.22)');
   glow.addColorStop(1, 'rgba(232,56,79,0)');
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, W, H);
 
+  // --- 双框 + 四角金饰 ---
   ctx.strokeStyle = 'rgba(240,200,105,0.5)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(26, 26, W - 52, H - 52);
-  ctx.strokeStyle = 'rgba(240,200,105,0.2)';
+  ctx.strokeRect(28, 28, W - 56, H - 56);
+  ctx.strokeStyle = 'rgba(240,200,105,0.16)';
   ctx.lineWidth = 1;
-  ctx.strokeRect(38, 38, W - 76, H - 76);
+  ctx.strokeRect(40, 40, W - 80, H - 80);
 
-  ctx.fillStyle = 'rgba(240,200,105,0.72)';
-  ctx.font = '500 15px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.strokeStyle = 'rgba(240,200,105,0.9)';
+  ctx.lineWidth = 3;
+  const corners: Array<[number, number, number, number]> = [
+    [48, 48, 1, 1],
+    [W - 48, 48, -1, 1],
+    [48, H - 48, 1, -1],
+    [W - 48, H - 48, -1, -1],
+  ];
+  corners.forEach(([x, y, dx, dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx * 36, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + dy * 36);
+    ctx.stroke();
+  });
+
+  // --- 顶部小标 ---
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('天 机 星 阵 · 专 属 解 签', W / 2, 76);
+  ctx.fillStyle = 'rgba(240,200,105,0.7)';
+  ctx.font = '500 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText('天 机 星 阵 · 卦 象 符 卡', W / 2, CARD_TITLE_Y);
 
+  // --- 上方：卦名 + 卦序 ---
   ctx.save();
-  ctx.shadowColor = 'rgba(240,200,105,0.55)';
-  ctx.shadowBlur = 28;
+  ctx.shadowColor = 'rgba(240,200,105,0.5)';
+  ctx.shadowBlur = 24;
   ctx.fillStyle = '#ffe9a8';
-  ctx.font = '800 86px "Shippori Mincho", "Noto Serif SC", serif';
-  ctx.fillText(hex.name, W / 2, 178);
+  ctx.font = '800 60px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText(hex.name, W / 2, CARD_NAME_Y);
   ctx.restore();
 
-  ctx.fillStyle = 'rgba(139,135,121,0.95)';
-  ctx.font = '500 16px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.fillText(`第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`, W / 2, 236);
+  ctx.fillStyle = 'rgba(160,155,140,0.95)';
+  ctx.font = '500 20px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText(`第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`, W / 2, CARD_META_Y);
 
-  const barW = 210;
-  const barH = 17;
-  const gap = 14;
-  let y = 292;
-  for (let i = hex.lines.length - 1; i >= 0; i--) {
-    const line = hex.lines[i];
-    const x0 = (W - barW) / 2;
-    if (line === 1) {
-      const grad = ctx.createLinearGradient(x0, y, x0 + barW, y);
-      grad.addColorStop(0, '#b98c2c');
-      grad.addColorStop(0.5, '#ffe9a8');
-      grad.addColorStop(1, '#b98c2c');
-      ctx.fillStyle = grad;
-      roundRectPath(ctx, x0, y, barW, barH, 4);
-      ctx.fill();
-    } else {
-      const half = (barW - 26) / 2;
-      ctx.fillStyle = '#a97fe8';
-      roundRectPath(ctx, x0, y, half, barH, 4);
-      ctx.fill();
-      roundRectPath(ctx, x0 + half + 26, y, half, barH, 4);
-      ctx.fill();
-    }
-    y += barH + gap;
-  }
+  // --- 中间：挂符 ---
+  drawTalisman(ctx, W / 2, CARD_TAL_Y, hex);
 
-  ctx.strokeStyle = 'rgba(240,200,105,0.22)';
+  // --- 分隔 ---
+  ctx.strokeStyle = 'rgba(240,200,105,0.24)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(96, y + 12);
-  ctx.lineTo(W - 96, y + 12);
+  ctx.moveTo(88, CARD_DIVIDER_Y);
+  ctx.lineTo(W - 88, CARD_DIVIDER_Y);
   ctx.stroke();
 
-  ctx.fillStyle = 'rgba(205,198,184,0.96)';
-  ctx.font = '400 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  // --- 下方：正文，在可用区域里垂直居中 ---
+  const bodyBottom = H - CARD_BOTTOM_RESERVE;
+  const bodyH = lines.length * lineHeight;
+  const pad = Math.max(0, (bodyBottom - CARD_BODY_TOP - bodyH) / 2);
+
   ctx.textAlign = 'left';
-  const lines = wrapText(ctx, text, W - 176);
-  let ty = y + 50;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(216,210,197,0.97)';
+  ctx.font = CARD_FONT(fontSize);
+  let ty = CARD_BODY_TOP + pad + Math.round(lineHeight * 0.74);
   for (const line of lines) {
-    if (ty > H - 132) {
-      ctx.fillText('……', 88, ty);
-      break;
-    }
     ctx.fillText(line, 88, ty);
-    ty += 31;
+    ty += lineHeight;
   }
 
+  // --- 底部 ---
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(139,135,121,0.8)';
-  ctx.font = '500 14px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
-  ctx.fillText('结印求签 · 天机星阵', W / 2, H - 74);
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = 'rgba(150,145,132,0.85)';
+  ctx.font = '500 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText('结 印 求 签 · 天 机 星 阵', W / 2, H - 122);
 
-  ctx.fillStyle = 'rgba(163,18,42,0.92)';
-  roundRectPath(ctx, W / 2 - 26, H - 56, 52, 52, 7);
+  const sealSize = 56;
+  const sealY = H - 102;
+  ctx.fillStyle = 'rgba(163,18,42,0.94)';
+  roundRectPath(ctx, W / 2 - sealSize / 2, sealY, sealSize, sealSize, 9);
   ctx.fill();
-  ctx.fillStyle = 'rgba(246,239,224,0.95)';
-  ctx.font = '700 28px "Shippori Mincho", "Noto Serif SC", serif';
-  ctx.fillText('易', W / 2, H - 29);
+  ctx.fillStyle = 'rgba(246,239,224,0.96)';
+  ctx.font = '700 32px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText('易', W / 2, sealY + sealSize / 2 + 1);
 }
-
 function shareAnswerCard() {
   const hex = hexagrams.find((h) => h.number === selectedHexNum);
   if (!hex) return;
