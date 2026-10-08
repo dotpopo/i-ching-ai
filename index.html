@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>易经 AI 学堂 — 3D 卦象可视化与智能解读</title>
+  <title>易经 AI 学堂 — 盲盒求签 · 卦象解读</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>☯</text></svg>">
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/src/style.css" />
@@ -14,36 +14,67 @@
     <header id="top-bar">
       <div class="logo">
         <span class="logo-icon">☯</span>
-        <span class="logo-text">易经 AI 学堂</span>
+        <span>易经 AI 学堂</span>
       </div>
       <nav class="nav-links">
-        <button class="nav-btn active" data-tab="explore">卦象探索</button>
-        <button class="nav-btn" data-tab="analysis">数据分析</button>
-        <button class="nav-btn" data-tab="ai-tutor">AI 解读</button>
+        <button class="nav-btn active" data-tab="explore">卦象</button>
+        <button class="nav-btn" data-tab="analysis">数据</button>
+        <button class="nav-btn" data-tab="ai-tutor">解读</button>
       </nav>
       <div class="header-actions">
-        <span class="header-hint">点击卦象或使用键盘 ← → 切换</span>
+        <button class="api-key-btn" id="api-key-btn" title="配置 AI API 密钥">🔑 API</button>
+        <span class="header-hint">← → 切换 · 点击卦象</span>
       </div>
     </header>
 
     <!-- 主画布 -->
     <main id="canvas-container">
       <canvas id="three-canvas"></canvas>
-      <!-- 加载状态 -->
-      <div id="loading-overlay">
-        <div class="loader-spinner"></div>
-        <p>正在构建卦象空间…</p>
-      </div>
-      <!-- 错误状态 -->
-      <div id="error-overlay" style="display:none">
-        <p class="error-text">场景加载失败，请刷新页面重试</p>
-      </div>
     </main>
 
-    <!-- 底部信息面板 -->
-    <aside id="info-panel" class="panel-open">
+    <!-- 求签按钮 -->
+    <button id="oracle-btn">
+      <span class="oracle-icon">🔮</span>
+      求签
+    </button>
+
+    <!-- 盲盒结果弹窗 -->
+    <div id="blindbox-modal">
+      <div class="blindbox-content">
+        <div class="blindbox-cover" id="blindbox-cover">☯</div>
+        <div class="blindbox-result" id="blindbox-result"></div>
+        <div class="blindbox-name" id="blindbox-name"></div>
+        <div class="blindbox-number" id="blindbox-number"></div>
+        <div class="blindbox-interpretation" id="blindbox-interpretation"></div>
+        <div class="blindbox-actions">
+          <button class="blindbox-btn share" id="blindbox-share">📤 分享</button>
+          <button class="blindbox-btn collect" id="blindbox-collect">⭐ 收藏</button>
+          <button class="blindbox-btn close-btn" id="blindbox-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 分享卡片 -->
+    <div id="share-card">
+      <div class="share-card-header">易经 AI 学堂 · 卦象卡片</div>
+      <div class="share-card-hex" id="share-card-hex">☰</div>
+      <div class="share-card-name" id="share-card-name">乾卦</div>
+      <div class="share-card-number" id="share-card-number">#1 乾为天</div>
+      <div class="share-card-msg" id="share-card-msg"></div>
+      <div class="share-card-footer">扫码或截图分享 · 易经 AI 学堂</div>
+      <div class="share-card-actions">
+        <button class="blindbox-btn share" id="share-download">💾 保存图片</button>
+        <button class="blindbox-btn close-btn" id="share-close">关闭</button>
+      </div>
+    </div>
+
+    <!-- 收藏栏 -->
+    <div id="collection-bar"></div>
+
+    <!-- 信息面板 -->
+    <aside id="info-panel">
       <div class="panel-header">
-        <h2 id="hexagram-name">乾卦</h2>
+        <h2 id="panel-title">卦象探索</h2>
         <span id="hexagram-number" class="hex-number">#1</span>
         <button id="panel-close" class="icon-btn">✕</button>
       </div>
@@ -66,17 +97,24 @@
           </div>
         </div>
         <div class="ai-interpretation" id="ai-interpretation">
-          <h3>AI 解读</h3>
+          <h3>✦ AI 解读</h3>
           <div id="ai-text" class="ai-text">
             <p>乾卦为六十四卦之首，象征天、创始与纯粹阳刚之力。六爻皆阳，代表事物发展的六个阶段：元亨利贞。</p>
-            <p>在数据科学视角下，乾卦代表系统中的最大能量态——所有变量均处于正向激活状态，对应于时间序列中的持续增长阶段。</p>
           </div>
+        </div>
+        <div class="api-key-section" id="api-key-section">
+          <h3>🔑 AI 密钥</h3>
+          <div class="api-key-input-row">
+            <input class="api-key-input" id="api-key-input" type="password" placeholder="输入 DeepSeek API Key" />
+            <button class="api-key-save" id="api-key-save">保存</button>
+          </div>
+          <div class="api-key-status" id="api-key-status">未配置 — 使用预设解读</div>
         </div>
       </div>
     </aside>
 
     <!-- 数据分析面板 -->
-    <section id="analysis-panel" class="hidden-panel">
+    <section id="analysis-panel" class="hidden-panel panel-closed">
       <div class="panel-header">
         <h2>卦象数据分析</h2>
         <button id="analysis-close" class="icon-btn">✕</button>
@@ -97,7 +135,7 @@
     </section>
 
     <!-- AI 导师面板 -->
-    <section id="tutor-panel" class="hidden-panel">
+    <section id="tutor-panel" class="hidden-panel panel-closed">
       <div class="panel-header">
         <h2>AI 导师</h2>
         <button id="tutor-close" class="icon-btn">✕</button>
