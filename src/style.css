@@ -964,115 +964,213 @@ html, body {
   line-height: 1.6;
 }
 
-/* ===== AI 导师面板 ===== */
-.tutor-messages {
+/* ===== AI 卦象卡片生成器 ===== */
+.card-generator {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  max-height: 350px;
-  overflow-y: auto;
-  padding-right: 2px;
+  gap: 12px;
 }
 
-.tutor-msg {
+.generator-intro {
+  font-size: 11px;
+  color: var(--fg-muted);
+  line-height: 1.6;
+  padding: 8px 10px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.generator-intro p {
+  margin: 0;
+}
+
+.generator-input-area {
   display: flex;
+  flex-direction: column;
   gap: 8px;
 }
 
-.tutor-msg.ai { flex-direction: row; }
-.tutor-msg.user { flex-direction: row-reverse; }
-
-.msg-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-
-.tutor-msg.ai .msg-avatar {
-  background: var(--crimson-soft);
-  color: var(--crimson);
-  border: 1px solid rgba(196,30,58,0.3);
-}
-
-.tutor-msg.user .msg-avatar {
-  background: var(--gold-soft);
-  color: var(--gold);
-  border: 1px solid var(--border-gold);
-}
-
-.msg-bubble {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 8px 12px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--fg);
-  max-width: 85%;
-}
-
-.tutor-msg.user .msg-bubble {
-  background: rgba(196,30,58,0.08);
-  border-color: rgba(196,30,58,0.2);
-}
-
-.typing {
-  color: var(--fg-muted);
-  font-style: italic;
-}
-
-.tutor-input-area {
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.tutor-input-area input {
-  flex: 1;
+#question-input {
+  width: 100%;
   background: rgba(0,0,0,0.3);
   border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 7px 12px;
+  border-radius: 10px;
+  padding: 10px 12px;
   color: var(--fg);
   font-family: var(--font-body);
   font-size: 12px;
+  line-height: 1.5;
   outline: none;
+  resize: none;
   transition: border-color 0.2s;
+  box-sizing: border-box;
 }
 
-.tutor-input-area input:focus {
+#question-input:focus {
   border-color: var(--crimson);
+  box-shadow: 0 0 0 2px rgba(196,30,58,0.1);
 }
 
-.tutor-input-area input::placeholder {
+#question-input::placeholder {
   color: var(--fg-muted);
   opacity: 0.5;
 }
 
-.tutor-input-area button {
-  background: var(--crimson);
-  color: var(--fg);
-  border: none;
-  border-radius: 16px;
-  padding: 7px 14px;
+.generate-btn {
+  background: linear-gradient(135deg, var(--crimson), #8b1a2b);
+  color: var(--gold);
+  border: 1px solid rgba(232,197,71,0.3);
+  border-radius: 20px;
+  padding: 10px 20px;
   font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  letter-spacing: 0.5px;
+}
+
+.generate-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(196,30,58,0.4), 0 0 12px rgba(232,197,71,0.2);
+  border-color: var(--gold);
+}
+
+.generate-btn:active {
+  transform: translateY(0);
+}
+
+.generate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ai-card-container {
+  min-height: 200px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.ai-card-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.placeholder-icon {
+  font-size: 32px;
+  margin-bottom: 10px;
+  opacity: 0.5;
+}
+
+.ai-card-placeholder p {
+  font-size: 11px;
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+
+/* AI 生成的卡片 */
+.ai-card {
+  background: linear-gradient(135deg, #0d0a14 0%, #1a0a14 100%);
+  border: 1px solid var(--border-gold);
+  border-radius: 12px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.ai-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(232,197,71,0.08), transparent 60%);
+  pointer-events: none;
+}
+
+.ai-card-hex {
+  font-size: 36px;
+  color: var(--gold);
+  text-align: center;
+  margin-bottom: 8px;
+  letter-spacing: 4px;
+  font-family: var(--font-display);
+}
+
+.ai-card-name {
+  font-size: 20px;
+  color: var(--gold);
+  text-align: center;
+  font-weight: 700;
+  font-family: var(--font-display);
+  margin-bottom: 4px;
+}
+
+.ai-card-number {
+  font-size: 10px;
+  color: var(--fg-muted);
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.ai-card-question {
   font-size: 12px;
-  font-weight: 600;
+  color: var(--crimson);
+  text-align: center;
+  margin-bottom: 12px;
+  padding: 6px 10px;
+  background: rgba(196,30,58,0.08);
+  border-radius: 8px;
+  border: 1px solid rgba(196,30,58,0.15);
+  font-style: italic;
+}
+
+.ai-card-interpretation {
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--fg-dim);
+  text-align: justify;
+}
+
+.ai-card-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+  font-size: 9px;
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.card-action-btn {
+  flex: 1;
+  background: var(--card);
+  color: var(--fg-dim);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 8px 12px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.tutor-input-area button:hover {
-  background: #e02040;
-  transform: translateY(-1px);
+.card-action-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 0 0 12px rgba(232,197,71,0.15);
 }
 
 /* ===== 收藏栏 ===== */

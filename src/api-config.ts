@@ -63,8 +63,12 @@ export async function callChatCompletion(
     throw new Error('未配置 API Key')
   }
 
-  // 通过 Netlify Function 代理请求（同源，无 CORS 问题）
-  const response = await fetch('/.netlify/functions/proxy', {
+  // 开发环境用 Vite 中间件代理，生产环境用 Netlify Function
+  const proxyUrl = import.meta.env.DEV
+    ? '/api/proxy'
+    : '/.netlify/functions/proxy'
+
+  const response = await fetch(proxyUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

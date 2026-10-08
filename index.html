@@ -21,7 +21,7 @@
       <nav class="nav-links">
         <button class="nav-btn active" data-tab="explore">卦象</button>
         <button class="nav-btn" data-tab="analysis">数据</button>
-        <button class="nav-btn" data-tab="ai-tutor">解读</button>
+        <button class="nav-btn" data-tab="ai-tutor">AI 解读</button>
       </nav>
       <div class="header-actions">
         <span class="header-hint">← → 切换 · 点击卦象</span>
@@ -170,25 +170,33 @@
       </div>
     </section>
 
-    <!-- AI 导师面板 -->
+    <!-- AI 卦象卡片生成器 -->
     <section id="tutor-panel" class="hidden-panel panel-closed">
       <div class="panel-header">
-        <h2>AI 导师</h2>
+        <h2>🔮 AI 卦象解读</h2>
         <button id="tutor-close" class="icon-btn">✕</button>
       </div>
       <div class="panel-body">
-        <div id="tutor-messages" class="tutor-messages">
-          <div class="tutor-msg ai">
-            <span class="msg-avatar">AI</span>
-            <div class="msg-bubble">
-              <p>欢迎来到易经 AI 学堂。我可以为你解读卦象、分析卦象之间的关系，或从数据科学角度解释传统智慧。</p>
-              <p>请选择一个卦象开始探索，或直接向我提问。</p>
+        <div class="card-generator">
+          <div class="generator-intro">
+            <p>输入你的问题，AI 将结合当前卦象为你生成专属解读卡片</p>
+          </div>
+          <div class="generator-input-area">
+            <textarea id="question-input" placeholder="例如：这次面试能成功吗？" rows="3"></textarea>
+            <button id="generate-btn" class="generate-btn">
+              <span>✨ 生成解读</span>
+            </button>
+          </div>
+          <div id="ai-card-container" class="ai-card-container">
+            <div class="ai-card-placeholder">
+              <span class="placeholder-icon">🎴</span>
+              <p>选择卦象并输入问题，生成你的专属解读卡片</p>
             </div>
           </div>
-        </div>
-        <div class="tutor-input-area">
-          <input id="tutor-input" type="text" placeholder="输入你的问题…" />
-          <button id="tutor-send">发送</button>
+          <div class="card-actions" id="card-actions" style="display:none;">
+            <button id="card-download" class="card-action-btn">💾 下载卡片</button>
+            <button id="card-share" class="card-action-btn">📤 分享</button>
+          </div>
         </div>
       </div>
     </section>

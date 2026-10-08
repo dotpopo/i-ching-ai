@@ -187,13 +187,19 @@ function bindEvents() {
     }
   });
 
-  // AI 导师输入
-  const tutorInput = document.getElementById('tutor-input') as HTMLInputElement;
-  const tutorSend = document.getElementById('tutor-send')!;
-  tutorSend.addEventListener('click', () => sendTutorMessage());
-  tutorInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') sendTutorMessage();
+  // AI 卡片生成器
+  const generateBtn = document.getElementById('generate-btn')!;
+  generateBtn.addEventListener('click', generateAiCard);
+  const questionInput = document.getElementById('question-input') as HTMLTextAreaElement;
+  questionInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+      generateAiCard();
+    }
   });
+
+  // 卡片下载和分享
+  document.getElementById('card-download')!.addEventListener('click', downloadAiCard);
+  document.getElementById('card-share')!.addEventListener('click', shareAiCard);
 }
 
 // ===== API 配置弹窗 =====
@@ -319,60 +325,55 @@ function updateInfoPanel(num: number) {
 function updateAiInterpretation(hex: Hexagram) {
   const aiText = document.getElementById('ai-text')!;
 
-  if (isAiConfigured) {
-    aiText.innerHTML = `
-      <p class="ai-section-title">🌀 传统解读</p>
-      <p class="typing">AI 正在解读…</p>
-    `;
+  // 始终先显示预设内容（立即可见，无加载状态）
+  aiText.innerHTML = buildInterpretationHTML(
+    hex.interpretation,
+    hex.dataScience,
+    getChildFriendlyExplanation(hex),
+    getLifeAdvice(hex)
+  );
+  bindCollapsibleToggles();
 
+  // 已配置 API 时，后台生成 AI 内容，完成后静默替换
+  if (isAiConfigured) {
     generateAiInterpretations(hex).then((interpretations) => {
-      aiText.innerHTML = `
-        <p class="ai-section-title">🌀 传统解读</p>
-        <p>${interpretations.traditional}</p>
-        <p class="ai-section-title">📊 数据科学视角</p>
-        <p>${interpretations.dataScience}</p>
-        <p class="ai-section-title">👶 6岁小孩能懂</p>
-        <div class="ai-collapsible">
-          <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(interpretations.childFriendly)}">${escapeHtml(truncateText(interpretations.childFriendly, 80))}</div>
-          <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
-        </div>
-        <p class="ai-section-title">💡 生活启示</p>
-        <p>${interpretations.lifeAdvice}</p>
-      `;
+      aiText.innerHTML = buildInterpretationHTML(
+        interpretations.traditional,
+        interpretations.dataScience,
+        interpretations.childFriendly,
+        interpretations.lifeAdvice
+      );
       bindCollapsibleToggles();
     }).catch(() => {
-      aiText.innerHTML = `
-        <p class="ai-section-title">🌀 传统解读</p>
-        <p>${hex.interpretation}</p>
-        <p class="ai-section-title">📊 数据科学视角</p>
-        <p>${hex.dataScience}</p>
-        <p class="ai-section-title">👶 6岁小孩能懂</p>
-        <div class="ai-collapsible">
-          <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(getChildFriendlyExplanation(hex))}">${escapeHtml(truncateText(getChildFriendlyExplanation(hex), 80))}</div>
-          <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
-        </div>
-        <p class="ai-section-title">💡 生活启示</p>
-        <p>${getLifeAdvice(hex)}</p>
-      `;
-      bindCollapsibleToggles();
+      // AI 生成失败时保持预设内容
     });
-  } else {
-    // 预设内容
-    aiText.innerHTML = `
-      <p class="ai-section-title">🌀 传统解读</p>
-      <p>${hex.interpretation}</p>
-      <p class="ai-section-title">📊 数据科学视角</p>
-      <p>${hex.dataScience}</p>
-      <p class="ai-section-title">👶 6岁小孩能懂</p>
-      <div class="ai-collapsible">
-        <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(getChildFriendlyExplanation(hex))}">${escapeHtml(truncateText(getChildFriendlyExplanation(hex), 80))}</div>
-        <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
-      </div>
-      <p class="ai-section-title">💡 生活启示</p>
-      <p>${getLifeAdvice(hex)}</p>
-    `;
-    bindCollapsibleToggles();
   }
+}
+
+function buildInterpretationHTML(
+  traditional: string,
+  dataScience: string,
+  childFriendly: string,
+  lifeAdvice: string
+): string {
+  const needsCollapse = childFriendly.length > 80;
+  const childSection = needsCollapse
+    ? `<div class="ai-collapsible">
+        <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(childFriendly)}">${escapeHtml(truncateText(childFriendly, 80))}</div>
+        <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
+      </div>`
+    : `<p>${escapeHtml(childFriendly)}</p>`;
+
+  return `
+    <p class="ai-section-title">🌀 传统解读</p>
+    <p>${traditional}</p>
+    <p class="ai-section-title">📊 数据科学视角</p>
+    <p>${dataScience}</p>
+    <p class="ai-section-title">🌱 通俗解读</p>
+    ${childSection}
+    <p class="ai-section-title">💡 生活启示</p>
+    <p>${lifeAdvice}</p>
+  `;
 }
 
 function bindCollapsibleToggles() {
@@ -753,134 +754,191 @@ function drawChart(hexNum: number) {
 }
 
 // ===== AI 导师 =====
-async function updateAITutor(hexNum: number) {
+/** 更新卡片生成器占位符（显示当前卦象） */
+function updateAITutor(hexNum: number) {
   const hex = hexagrams.find((h) => h.number === hexNum);
   if (!hex) return;
 
-  const messages = document.getElementById('tutor-messages')!;
-  const userMsg = document.createElement('div');
-  userMsg.className = 'tutor-msg user';
-  userMsg.innerHTML = `
-    <span class="msg-avatar">我</span>
-    <div class="msg-bubble"><p>解读第${hexNum}卦「${hex.name}」</p></div>
-  `;
-  messages.appendChild(userMsg);
+  const container = document.getElementById('ai-card-container')!;
+  const placeholder = container.querySelector('.ai-card-placeholder');
+  if (placeholder) {
+    placeholder.innerHTML = `
+      <span class="placeholder-icon">🎴</span>
+      <p>当前卦象：第${hexNum}卦「${hex.name}」</p>
+      <p style="margin-top:4px;opacity:0.6;">输入你的问题，生成专属解读卡片</p>
+    `;
+  }
+}
 
-  const aiMsg = document.createElement('div');
-  aiMsg.className = 'tutor-msg ai';
-  aiMsg.innerHTML = `
-    <span class="msg-avatar">AI</span>
-    <div class="msg-bubble"><p class="typing">正在解读…</p></div>
+/** 生成 AI 卦象解读卡片 */
+async function generateAiCard() {
+  const questionInput = document.getElementById('question-input') as HTMLTextAreaElement;
+  const question = questionInput.value.trim();
+  if (!question) {
+    showToast('请输入你的问题');
+    return;
+  }
+
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex) return;
+
+  const generateBtn = document.getElementById('generate-btn') as HTMLButtonElement;
+  const container = document.getElementById('ai-card-container')!;
+  const cardActions = document.getElementById('card-actions')!;
+
+  // 显示加载状态
+  generateBtn.disabled = true;
+  generateBtn.innerHTML = '<span>⏳ 生成中…</span>';
+  container.innerHTML = `
+    <div class="ai-card-placeholder">
+      <span class="placeholder-icon">🔮</span>
+      <p>AI 正在解读「${hex.name}」…</p>
+    </div>
   `;
-  messages.appendChild(aiMsg);
-  messages.scrollTop = messages.scrollHeight;
+  cardActions.style.display = 'none';
 
   const config = getApiConfig();
+  let interpretation = '';
+
   if (config.apiKey) {
     try {
-      const response = await callChatCompletion([
+      interpretation = await callChatCompletion([
         {
           role: 'system',
-          content: '你是一位精通易经、传统中国哲学和数据科学的学者。请用中文回答，风格典雅而富有洞察力，结合传统智慧与现代数据分析视角。回答控制在300字以内。',
+          content: '你是一位精通易经的学者。用户会给出一个问题和一个卦象，请用易经的哲学体系解读这个问题与卦象的关联。风格典雅而富有洞察力，200字以内，用中文回答。',
         },
         {
           role: 'user',
-          content: `请解读第${hex.number}卦「${hex.name}」（${hex.chinese}）。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。性质：${hex.nature}。象征：${hex.symbol}。请从传统哲学和数据科学两个角度进行解读。`,
+          content: `问题：${question}\n\n卦象：第${hex.number}卦「${hex.name}」（${hex.chinese}）\n卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}\n性质：${hex.nature}\n象征：${hex.symbol}\n\n请结合这个问题和卦象，给出深刻的解读。`,
         },
       ], config);
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble"><p>${response}</p></div>
-      `;
     } catch (err) {
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble"><p>AI 解读暂时不可用，请检查 API 配置后重试。</p></div>
-      `;
+      // AI 失败时使用预设解读
+      interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
     }
   } else {
-    // 未配置 API Key 时，显示预设内容
-    setTimeout(() => {
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble">
-          <p><strong>${hex.name}卦</strong>（第${hexNum}卦）${hex.chinese}</p>
-          <p>${hex.interpretation}</p>
-          <p>从数据科学视角：${hex.dataScience}</p>
-          <p style="color:var(--gold);margin-top:8px;font-size:11px;">🔑 配置 API Key 可解锁 AI 实时解读</p>
-        </div>
-      `;
-      messages.scrollTop = messages.scrollHeight;
-    }, 1200);
+    // 未配置 API Key 时使用预设解读
+    interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
   }
 
-  messages.scrollTop = messages.scrollHeight;
+  // 渲染卡片
+  container.innerHTML = `
+    <div class="ai-card">
+      <div class="ai-card-hex">${hex.lines.map((l) => (l === 1 ? '─' : '──')).join('')}</div>
+      <div class="ai-card-name">${hex.name}卦</div>
+      <div class="ai-card-number">#${hex.number} · ${hex.chinese} · ${hex.nature}</div>
+      <div class="ai-card-question">「${escapeHtml(question)}」</div>
+      <div class="ai-card-interpretation">${escapeHtml(interpretation)}</div>
+      <div class="ai-card-footer">易经 AI 学堂 · 专属解读</div>
+    </div>
+  `;
+
+  // 显示操作按钮
+  cardActions.style.display = 'flex';
+
+  // 恢复按钮
+  generateBtn.disabled = false;
+  generateBtn.innerHTML = '<span>✨ 生成解读</span>';
 }
 
-async function sendTutorMessage() {
-  const input = document.getElementById('tutor-input') as HTMLInputElement;
-  const text = input.value.trim();
-  if (!text || !scene) return;
+/** 下载 AI 卡片为 PNG */
+function downloadAiCard() {
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex) return;
 
-  const messages = document.getElementById('tutor-messages')!;
+  const question = (document.getElementById('question-input') as HTMLTextAreaElement).value.trim();
+  const interpretationEl = document.querySelector('.ai-card-interpretation');
+  const interpretation = interpretationEl ? interpretationEl.textContent : hex.interpretation;
 
-  const userMsg = document.createElement('div');
-  userMsg.className = 'tutor-msg user';
-  userMsg.innerHTML = `
-    <span class="msg-avatar">我</span>
-    <div class="msg-bubble"><p>${text}</p></div>
-  `;
-  messages.appendChild(userMsg);
-  input.value = '';
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d')!;
+  canvas.width = 720;
+  canvas.height = 960;
 
-  const aiMsg = document.createElement('div');
-  aiMsg.className = 'tutor-msg ai';
-  aiMsg.innerHTML = `
-    <span class="msg-avatar">AI</span>
-    <div class="msg-bubble"><p class="typing">思考中…</p></div>
-  `;
-  messages.appendChild(aiMsg);
-  messages.scrollTop = messages.scrollHeight;
+  // 背景
+  const grad = ctx.createLinearGradient(0, 0, 720, 960);
+  grad.addColorStop(0, '#0d0a14');
+  grad.addColorStop(1, '#1a0a14');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 720, 960);
 
-  const config = getApiConfig();
-  if (config.apiKey) {
-    try {
-      const response = await callChatCompletion([
-        {
-          role: 'system',
-          content: '你是一位精通易经、传统中国哲学和数据科学的学者。请用中文回答，风格典雅而富有洞察力，结合传统智慧与现代数据分析视角。',
-        },
-        { role: 'user', content: text },
-      ], config);
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble"><p>${response}</p></div>
-      `;
-    } catch (err) {
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble"><p>AI 回复失败，请检查 API 配置后重试。</p></div>
-      `;
-    }
-  } else {
-    setTimeout(() => {
-      const hex = hexagrams.find((h) => h.number === selectedHexNum);
-      const responses = [
-        `从${hex?.name}卦的角度来看，这是一个关于${hex?.nature}的卦象。在数据分析中，这对应于${hex?.name === '乾' ? '最大熵状态' : hex?.name === '坤' ? '最小能量基态' : '过渡态'}的特征分布。`,
-        `${hex?.name}卦的六爻结构（${hex?.lines.join('')}）形成了一个独特的模式。如果我们将它映射到六维特征空间，每个爻代表一个维度的激活状态，阳爻为1，阴爻为0。`,
-        `在易经的哲学体系中，${hex?.name}卦${hex?.interpretation}这与数据科学中的${hex?.name === '泰' ? '模型收敛' : hex?.name === '否' ? '分布偏移' : '模式识别'}有着深刻的对应关系。`,
-        `你可以尝试对比第${selectedHexNum === 1 ? 2 : selectedHexNum === 2 ? 1 : 1}卦和第${selectedHexNum}卦，看看它们在阴阳结构上的互补关系。`,
-      ];
-      const response = responses[Math.floor(Math.random() * responses.length)];
-      aiMsg.innerHTML = `
-        <span class="msg-avatar">AI</span>
-        <div class="msg-bubble"><p>${response}</p></div>
-      `;
-      messages.scrollTop = messages.scrollHeight;
-    }, 1500);
+  // 边框
+  ctx.strokeStyle = 'rgba(232,197,71,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(20, 20, 680, 920);
+
+  // 标题
+  ctx.fillStyle = 'rgba(232,197,71,0.6)';
+  ctx.font = '14px "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('易经 AI 学堂 · 专属解读', 360, 60);
+
+  // 卦象
+  ctx.fillStyle = '#e8c547';
+  ctx.font = '48px "Noto Serif SC", serif';
+  ctx.fillText(hex.lines.map((l) => (l === 1 ? '─' : '──')).join(''), 360, 160);
+
+  // 名称
+  ctx.fillStyle = '#e8c547';
+  ctx.font = 'bold 32px "Noto Serif SC", serif';
+  ctx.fillText(`${hex.name}卦`, 360, 220);
+
+  // 编号
+  ctx.fillStyle = '#7a6a5a';
+  ctx.font = '12px "Noto Sans SC", sans-serif';
+  ctx.fillText(`#${hex.number} · ${hex.chinese} · ${hex.nature}`, 360, 250);
+
+  // 问题
+  if (question) {
+    ctx.fillStyle = '#c41e3a';
+    ctx.font = 'italic 16px "Noto Sans SC", sans-serif';
+    ctx.fillText(`「${question}」`, 360, 300);
   }
 
-  messages.scrollTop = messages.scrollHeight;
+  // 解读内容
+  ctx.fillStyle = '#c8b89a';
+  ctx.font = '14px "Noto Sans SC", sans-serif';
+  const lines = wrapText(ctx, interpretation, 580);
+  let y = 360;
+  lines.forEach((line) => {
+    ctx.fillText(line, 360, y);
+    y += 24;
+  });
+
+  // 底部
+  ctx.fillStyle = 'rgba(122,106,90,0.5)';
+  ctx.font = '10px "Noto Sans SC", sans-serif';
+  ctx.fillText('扫码或截图分享 · 易经 AI 学堂', 360, 900);
+
+  const link = document.createElement('a');
+  link.download = `iching-${hex.name}-card.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+/** 分享 AI 卡片 */
+function shareAiCard() {
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex) return;
+
+  const question = (document.getElementById('question-input') as HTMLTextAreaElement).value.trim();
+  const interpretationEl = document.querySelector('.ai-card-interpretation');
+  const interpretation = interpretationEl ? interpretationEl.textContent : hex.interpretation;
+
+  const text = `🔮 易经 AI 学堂\n${hex.name}卦（第${hex.number}卦）\n问题：${question}\n解读：${interpretation}`;
+
+  if (navigator.share) {
+    navigator.share({
+      title: `易经 AI 学堂 · ${hex.name}卦`,
+      text,
+    }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('已复制到剪贴板');
+    }).catch(() => {
+      showToast('复制失败，请手动复制');
+    });
+  }
 }
 
 // ===== 工具函数 =====
