@@ -51,7 +51,7 @@ export function clearApiConfig() {
   localStorage.removeItem('iching_api_key')
 }
 
-/** 调用 DeepSeek 兼容的 Chat Completions API */
+/** 调用 DeepSeek 兼容的 Chat Completions API（通过 Netlify Function 代理，绕过 CORS）*/
 export async function callChatCompletion(
   messages: Array<{ role: string; content: string }>,
   config?: Partial<ApiConfig>
@@ -63,7 +63,8 @@ export async function callChatCompletion(
     throw new Error('未配置 API Key')
   }
 
-  const response = await fetch(`${mergedConfig.baseUrl}/v1/chat/completions`, {
+  // 通过 Netlify Function 代理请求（同源，无 CORS 问题）
+  const response = await fetch('/.netlify/functions/proxy', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -71,6 +72,7 @@ export async function callChatCompletion(
     },
     body: JSON.stringify({
       model: mergedConfig.modelId,
+      baseUrl: mergedConfig.baseUrl,
       messages,
       temperature: 0.7,
       max_tokens: 800,
