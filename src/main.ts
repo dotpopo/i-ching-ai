@@ -1,6 +1,7 @@
 /* ===== 易经 AI 学堂 — 主入口 ===== */
 import { IChingScene } from './scene.js';
 import { hexagrams, generateHexagramStats } from './data.js';
+import type { Hexagram } from './data.js';
 import { getApiConfig, saveApiConfig, callChatCompletion } from './api-config.js';
 
 // ===== 全局状态 =====
@@ -8,6 +9,8 @@ let scene: IChingScene | null = null;
 let currentTab: 'explore' | 'analysis' | 'ai-tutor' = 'explore';
 let selectedHexNum = 1;
 let collectedHexagrams = new Set<number>();
+let blindboxHexNum: number | null = null;
+let isAiConfigured = false;
 
 // DOM 引用
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
@@ -24,15 +27,15 @@ const oracleBtn = document.getElementById('oracle-btn')!;
 const blindboxModal = document.getElementById('blindbox-modal')!;
 const shareCard = document.getElementById('share-card')!;
 const apiKeyBtn = document.getElementById('api-key-btn')!;
-const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
-const apiKeySave = document.getElementById('api-key-save')!;
-const apiKeyStatus = document.getElementById('api-key-status')!;
-const apiKeySection = document.getElementById('api-key-section')!;
+const apiConfigModal = document.getElementById('api-config-modal')!;
+const apiConfigClose = document.getElementById('api-config-close')!;
+const modalApiKey = document.getElementById('modal-api-key') as HTMLInputElement;
+const modalBaseUrl = document.getElementById('modal-base-url') as HTMLInputElement;
+const modalModelId = document.getElementById('modal-model-id') as HTMLInputElement;
+const modalApiSave = document.getElementById('modal-api-save')!;
+const modalApiStatus = document.getElementById('modal-api-status')!;
+const openApiConfigBtn = document.getElementById('open-api-config')!;
 const collectionBar = document.getElementById('collection-bar')!;
-const baseUrlInput = document.getElementById('base-url-input') as HTMLInputElement;
-const modelIdInput = document.getElementById('model-id-input') as HTMLInputElement;
-const baseUrlSave = document.getElementById('base-url-save')!;
-const modelIdSave = document.getElementById('model-id-save')!;
 
 // ===== 初始化 =====
 function init() {
@@ -46,6 +49,10 @@ function init() {
     if (saved) {
       try { collectedHexagrams = new Set(JSON.parse(saved)); } catch {}
     }
+
+    // 检查 API 配置状态
+    const config = getApiConfig();
+    isAiConfigured = !!config.apiKey;
 
     scene = new IChingScene(canvas, {
       onSelect: handleHexagramSelect,
@@ -79,7 +86,7 @@ function bindEvents() {
 
   window.addEventListener('click', (e) => {
     if (!scene) return;
-    if (e.target instanceof HTMLElement && e.target.closest('#info-panel, #analysis-panel, #tutor-panel, #blindbox-modal, #share-card')) return;
+    if (e.target instanceof HTMLElement && e.target.closest('#info-panel, #analysis-panel, #tutor-panel, #blindbox-modal, #share-card, #api-config-modal')) return;
     const hovered = scene.updateRaycast();
     if (hovered !== null) handleHexagramSelect(hovered);
   });
@@ -97,6 +104,7 @@ function bindEvents() {
       closeAllPanels();
       hideBlindbox();
       hideShareCard();
+      hideApiConfigModal();
     }
   });
 
@@ -130,30 +138,33 @@ function bindEvents() {
   document.getElementById('share-close')!.addEventListener('click', hideShareCard);
   document.getElementById('share-download')!.addEventListener('click', downloadShareCard);
 
-  // API Key 保存
-  apiKeySave.addEventListener('click', saveApiKey);
-  apiKeyInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveApiKey();
-  });
-
-  // Base URL 保存
-  baseUrlSave.addEventListener('click', saveBaseUrl);
-  baseUrlInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveBaseUrl();
-  });
-
-  // Model ID 保存
-  modelIdSave.addEventListener('click', saveModelId);
-  modelIdInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveModelId();
-  });
-
-  // API Key 按钮 — 打开配置区
+  // API Key 按钮 — 打开配置弹窗
   apiKeyBtn.addEventListener('click', () => {
-    // 先确保 info-panel 是打开的
-    infoPanel.classList.remove('panel-closed');
-    apiKeySection.scrollIntoView({ behavior: 'smooth' });
-    apiKeyInput.focus();
+    showApiConfigModal();
+  });
+
+  // API 配置弹窗关闭
+  apiConfigClose.addEventListener('click', hideApiConfigModal);
+  apiConfigModal.addEventListener('click', (e) => {
+    if (e.target === apiConfigModal) hideApiConfigModal();
+  });
+
+  // API 配置保存
+  modalApiSave.addEventListener('click', saveApiConfigFromModal);
+  modalApiKey.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveApiConfigFromModal();
+  });
+  modalBaseUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveApiConfigFromModal();
+  });
+  modalModelId.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') saveApiConfigFromModal();
+  });
+
+  // 打开 API 配置按钮（在 info panel 内）
+  openApiConfigBtn.addEventListener('click', () => {
+    hideApiConfigModal();
+    setTimeout(() => showApiConfigModal(), 100);
   });
 
   // AI 导师输入
@@ -165,52 +176,86 @@ function bindEvents() {
   });
 }
 
-// ===== API 配置管理 =====
-function saveApiKey() {
-  const key = apiKeyInput.value.trim();
-  if (!key) return;
-  saveApiConfig({ apiKey: key });
-  updateApiConfigUI();
-  showToast('API Key 已保存');
+// ===== API 配置弹窗 =====
+function showApiConfigModal() {
+  const config = getApiConfig();
+  modalApiKey.value = config.apiKey ? config.apiKey.slice(0, 8) + '...' + config.apiKey.slice(-4) : '';
+  modalBaseUrl.value = config.baseUrl;
+  modalModelId.value = config.modelId;
+  modalApiStatus.textContent = '';
+  modalApiStatus.style.color = '';
+  apiConfigModal.classList.add('visible');
 }
 
-function saveBaseUrl() {
-  const url = baseUrlInput.value.trim();
-  if (!url) return;
-  saveApiConfig({ baseUrl: url });
-  updateApiConfigUI();
-  showToast('API Base URL 已保存');
+function hideApiConfigModal() {
+  apiConfigModal.classList.remove('visible');
 }
 
-function saveModelId() {
-  const model = modelIdInput.value.trim();
-  if (!model) return;
-  saveApiConfig({ modelId: model });
+async function saveApiConfigFromModal() {
+  const key = modalApiKey.value.trim();
+  const baseUrl = modalBaseUrl.value.trim();
+  const modelId = modalModelId.value.trim();
+
+  // 如果用户清空了 key，删除所有配置
+  if (!key && !baseUrl && !modelId) {
+    // 检查是否有之前保存的值
+    const hasStoredKey = localStorage.getItem('iching_api_key');
+    const hasStoredUrl = localStorage.getItem('iching_api_base_url');
+    const hasStoredModel = localStorage.getItem('iching_api_model_id');
+    if (!hasStoredKey && !hasStoredUrl && !hasStoredModel) {
+      // 全部清空，恢复默认
+      saveApiConfig({ apiKey: '', baseUrl: '', modelId: '' });
+      isAiConfigured = false;
+      updateApiConfigUI();
+      hideApiConfigModal();
+      showToast('已恢复为预设解读模式');
+      return;
+    }
+  }
+
+  const config: Record<string, string> = {};
+  if (key && !key.includes('...')) config.apiKey = key;
+  if (baseUrl) config.baseUrl = baseUrl;
+  if (modelId) config.modelId = modelId;
+  saveApiConfig(config);
+
+  // 验证配置
+  const newConfig = getApiConfig();
+  if (newConfig.apiKey) {
+    // 测试 API 连接
+    modalApiStatus.textContent = '正在验证连接…';
+    modalApiStatus.style.color = 'var(--gold)';
+    try {
+      await callChatCompletion([
+        { role: 'system', content: '你好' },
+        { role: 'user', content: '测试连接' },
+      ], newConfig);
+      isAiConfigured = true;
+      modalApiStatus.textContent = '✓ 连接成功！AI 解读已激活';
+      modalApiStatus.style.color = 'var(--gold)';
+    } catch (err) {
+      modalApiStatus.textContent = '✗ 连接失败，请检查 API Key';
+      modalApiStatus.style.color = 'var(--crimson)';
+    }
+  } else {
+    isAiConfigured = false;
+    modalApiStatus.textContent = '未配置 API Key，使用预设解读';
+    modalApiStatus.style.color = '';
+  }
+
   updateApiConfigUI();
-  showToast('模型 ID 已保存');
+  setTimeout(() => hideApiConfigModal(), 1500);
 }
 
 function updateApiConfigUI() {
   const config = getApiConfig();
-
   if (config.apiKey) {
     apiKeyBtn.textContent = '🔑 已连接';
     apiKeyBtn.classList.add('connected');
-    apiKeyStatus.textContent = `✓ ${config.modelId} 已配置`;
-    apiKeyStatus.classList.add('connected');
-    apiKeyInput.value = config.apiKey.slice(0, 8) + '...' + config.apiKey.slice(-4);
   } else {
     apiKeyBtn.textContent = '🔑 API';
     apiKeyBtn.classList.remove('connected');
-    apiKeyStatus.textContent = '未配置 — 使用预设解读';
-    apiKeyStatus.classList.remove('connected');
   }
-
-  // 只显示用户自定义的值，不显示默认值
-  const storedBaseUrl = localStorage.getItem('iching_api_base_url') || '';
-  const storedModelId = localStorage.getItem('iching_api_model_id') || '';
-  baseUrlInput.value = storedBaseUrl;
-  modelIdInput.value = storedModelId;
 }
 
 // ===== 卦象选择 =====
@@ -245,10 +290,129 @@ function updateInfoPanel(num: number) {
     linesContainer.appendChild(lineEl);
   });
 
-  const aiText = document.getElementById('ai-text')!;
-  aiText.innerHTML = `<p>${hex.interpretation}</p><p>${hex.dataScience}</p>`;
+  // 更新 AI 解读（预设内容，AI 配置后动态生成）
+  updateAiInterpretation(hex);
 
   infoPanel.classList.remove('panel-closed');
+}
+
+function updateAiInterpretation(hex: Hexagram) {
+  const aiText = document.getElementById('ai-text')!;
+
+  if (isAiConfigured) {
+    // 显示加载状态
+    aiText.innerHTML = `
+      <p class="ai-section-title">🌀 传统解读</p>
+      <p class="typing">AI 正在解读…</p>
+    `;
+
+    // 并行生成多个 AI 解读
+    generateAiInterpretations(hex).then((interpretations) => {
+      aiText.innerHTML = `
+        <p class="ai-section-title">🌀 传统解读</p>
+        <p>${interpretations.traditional}</p>
+        <p class="ai-section-title">📊 数据科学视角</p>
+        <p>${interpretations.dataScience}</p>
+        <p class="ai-section-title">👶 6岁小孩能懂</p>
+        <p>${interpretations.childFriendly}</p>
+        <p class="ai-section-title">💡 生活启示</p>
+        <p>${interpretations.lifeAdvice}</p>
+      `;
+    }).catch(() => {
+      // 失败时回退到预设内容
+      aiText.innerHTML = `
+        <p class="ai-section-title">🌀 传统解读</p>
+        <p>${hex.interpretation}</p>
+        <p class="ai-section-title">📊 数据科学视角</p>
+        <p>${hex.dataScience}</p>
+        <p class="ai-section-title">👶 6岁小孩能懂</p>
+        <p>${hex.interpretation}</p>
+        <p class="ai-section-title">💡 生活启示</p>
+        <p>${hex.dataScience}</p>
+      `;
+    });
+  } else {
+    // 预设内容
+    aiText.innerHTML = `
+      <p class="ai-section-title">🌀 传统解读</p>
+      <p>${hex.interpretation}</p>
+      <p class="ai-section-title">📊 数据科学视角</p>
+      <p>${hex.dataScience}</p>
+      <p class="ai-section-title">👶 6岁小孩能懂</p>
+      <p>${getChildFriendlyExplanation(hex)}</p>
+      <p class="ai-section-title">💡 生活启示</p>
+      <p>${getLifeAdvice(hex)}</p>
+      <p style="color:var(--gold);margin-top:8px;font-size:11px;">🔑 配置 API Key 可解锁 AI 实时解读</p>
+    `;
+  }
+}
+
+async function generateAiInterpretations(hex: Hexagram): Promise<{
+  traditional: string;
+  dataScience: string;
+  childFriendly: string;
+  lifeAdvice: string;
+}> {
+  const config = getApiConfig();
+
+  const prompts = {
+    traditional: `请用中国传统哲学的视角，优雅而深刻地解读第${hex.number}卦「${hex.name}」（${hex.chinese}）。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。性质：${hex.nature}。象征：${hex.symbol}。请从传统哲学角度进行解读，300字以内。`,
+    dataScience: `请从数据科学和现代视角解读第${hex.number}卦「${hex.name}」。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。请用数据分析、模式识别、系统科学等角度进行解读，300字以内。`,
+    childFriendly: `请用6岁小孩能听懂的话解释第${hex.number}卦「${hex.name}」（${hex.chinese}）。${hex.interpretation}请用最简单的比喻和生活例子来解释，200字以内。`,
+    lifeAdvice: `请从第${hex.number}卦「${hex.name}」中提炼出对日常生活有指导意义的启示。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。请给出具体、可操作的生活建议，300字以内。`,
+  };
+
+  const results: Record<string, string> = {};
+
+  // 串行调用以避免速率限制
+  for (const [key, prompt] of Object.entries(prompts)) {
+    try {
+      const response = await callChatCompletion([
+        { role: 'system', content: '你是一位精通易经、传统中国哲学、数据科学和儿童教育的学者。请用中文回答，风格根据受众调整。' },
+        { role: 'user', content: prompt },
+      ], config);
+      results[key] = response;
+    } catch (err) {
+      // 使用预设内容作为回退
+      results[key] = getDefaultInterpretation(key, hex);
+    }
+  }
+
+  return results as any;
+}
+
+function getDefaultInterpretation(type: string, hex: Hexagram): string {
+  switch (type) {
+    case 'traditional': return hex.interpretation;
+    case 'dataScience': return hex.dataScience;
+    case 'childFriendly': return getChildFriendlyExplanation(hex);
+    case 'lifeAdvice': return getLifeAdvice(hex);
+    default: return hex.interpretation;
+  }
+}
+
+function getChildFriendlyExplanation(hex: Hexagram): string {
+  const explanations: Record<number, string> = {
+    1: '天就像一个超级大的爸爸，守护着整个世界。乾卦告诉我们，要像天一样，做一个勇敢、有力量的人！',
+    2: '大地妈妈很温柔，她抱着我们，让我们安全地成长。坤卦告诉我们，做一个温柔、有力量的人。',
+    3: '刚开始学走路的时候，会摔倒，会摔跤。但是不要害怕，慢慢来，一定会学会的！',
+    4: '就像小朋友去上学一样，开始什么都不懂，但是慢慢学习，就会越来越聪明！',
+    5: '有时候我们需要等一等，就像等蛋糕烤好一样。急不得，慢慢来会更好！',
+    6: '有时候会有争吵，但是只要我们心平气和地说话，问题总会解决的。',
+  };
+  return explanations[hex.number] || `${hex.name}卦告诉我们${hex.interpretation.substring(0, 50)}……`;
+}
+
+function getLifeAdvice(hex: Hexagram): string {
+  const advice: Record<number, string> = {
+    1: '现在正是展现你最好一面的时刻！就像太阳升起，万物都充满希望。',
+    2: '学会倾听和接纳。有时候，最强大的力量不是进攻，而是包容。',
+    3: '新的开始总是有点难，但每一个伟大的故事都从第一步开始。',
+    4: '保持好奇心，多问为什么。学习是一个没有终点的旅程。',
+    5: '耐心等待，好时机正在到来。不要急于求成。',
+    6: '沟通是解决一切问题的钥匙。说话之前先想想对方的感受。',
+  };
+  return advice[hex.number] || `${hex.name}卦提醒我们：在生活中保持平衡和耐心。`;
 }
 
 // ===== 标签切换 =====
@@ -302,11 +466,7 @@ function hideBlindbox() {
 }
 
 // ===== 分享卡片 =====
-// 全局变量：记录盲盒求签的结果卦象
-let blindboxHexNum: number | null = null;
-
 function showShareCard() {
-  // 优先显示盲盒求签的卦象，否则显示当前选中的卦象
   const num = blindboxHexNum || selectedHexNum;
   const hex = hexagrams.find((h) => h.number === num)!;
   document.getElementById('share-card-hex')!.textContent = hex.lines.map((l) => (l === 1 ? '─' : '──')).join('');
@@ -585,7 +745,7 @@ async function updateAITutor(hexNum: number) {
           <p><strong>${hex.name}卦</strong>（第${hexNum}卦）${hex.chinese}</p>
           <p>${hex.interpretation}</p>
           <p>从数据科学视角：${hex.dataScience}</p>
-          <p style="color:var(--gold);margin-top:8px;font-size:11px;">💡 配置 API Key 可获得更丰富的 AI 解读</p>
+          <p style="color:var(--gold);margin-top:8px;font-size:11px;">🔑 配置 API Key 可解锁 AI 实时解读</p>
         </div>
       `;
       messages.scrollTop = messages.scrollHeight;

@@ -608,7 +608,96 @@ html, body {
   margin-bottom: 0;
 }
 
-/* AI 密钥输入 */
+.ai-section-title {
+  font-size: 11px;
+  color: var(--gold);
+  font-weight: 600;
+  margin-top: 10px;
+  margin-bottom: 4px;
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-section-title:first-child {
+  margin-top: 0;
+}
+
+/* API 配置触发按钮 */
+.api-config-trigger {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* API 配置弹窗 */
+#api-config-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+
+#api-config-modal.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.api-config-content {
+  width: 380px;
+  max-width: 90%;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-gold);
+  border-radius: var(--radius);
+  box-shadow: 0 0 60px rgba(196,30,58,0.3);
+  transform: scale(0.9);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+#api-config-modal.visible .api-config-content {
+  transform: scale(1);
+}
+
+.api-config-field {
+  margin-bottom: 10px;
+}
+
+.api-config-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+
+.api-config-field .api-key-input {
+  width: 100%;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.api-config-field .api-key-input:focus {
+  border-color: var(--crimson);
+}
+
+.api-config-actions {
+  margin-top: 14px;
+}
+
+/* AI 密钥输入 (legacy, kept for compatibility) */
 .api-key-section {
   margin-top: 12px;
   padding-top: 10px;

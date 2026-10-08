@@ -38,6 +38,35 @@
       求签
     </button>
 
+    <!-- API 配置弹窗 -->
+    <div id="api-config-modal">
+      <div class="api-config-content">
+        <div class="panel-header">
+          <h2>🔑 AI 配置</h2>
+          <button id="api-config-close" class="icon-btn">✕</button>
+        </div>
+        <div class="panel-body">
+          <p style="font-size:12px;color:var(--fg-muted);margin-bottom:12px;">配置 AI API 以获得实时解读。留空则使用预设解读。</p>
+          <div class="api-config-field">
+            <label>API Key</label>
+            <input class="api-key-input" id="modal-api-key" type="password" placeholder="输入 DeepSeek API Key" />
+          </div>
+          <div class="api-config-field">
+            <label>Base URL</label>
+            <input class="api-key-input" id="modal-base-url" type="text" placeholder="https://api.deepseek.com" />
+          </div>
+          <div class="api-config-field">
+            <label>模型 ID</label>
+            <input class="api-key-input" id="modal-model-id" type="text" placeholder="deepseek-chat" />
+          </div>
+          <div class="api-config-actions">
+            <button class="api-key-save" id="modal-api-save">保存配置</button>
+          </div>
+          <div class="api-key-status" id="modal-api-status" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- 盲盒结果弹窗 -->
     <div id="blindbox-modal">
       <div class="blindbox-content">
@@ -99,24 +128,18 @@
         <div class="ai-interpretation" id="ai-interpretation">
           <h3>✦ AI 解读</h3>
           <div id="ai-text" class="ai-text">
+            <p class="ai-section-title">🌀 传统解读</p>
             <p>乾卦为六十四卦之首，象征天、创始与纯粹阳刚之力。六爻皆阳，代表事物发展的六个阶段：元亨利贞。</p>
+            <p class="ai-section-title">📊 数据科学视角</p>
+            <p>乾卦代表系统中的最大能量态——所有变量均处于正向激活状态，对应于时间序列中的持续增长阶段。</p>
+            <p class="ai-section-title">👶 6岁小孩能懂</p>
+            <p>天就像爸爸一样，很强大很伟大。乾卦告诉我们，做事要一步一步来，就像搭积木一样，先搭最下面的一块，再一块一块往上搭。</p>
+            <p class="ai-section-title">💡 生活启示</p>
+            <p>现在正是最好的时机，就像太阳刚升起，万物都充满希望。</p>
           </div>
         </div>
-        <div class="api-key-section" id="api-key-section">
-          <h3>🔑 AI 密钥</h3>
-          <div class="api-key-input-row">
-            <input class="api-key-input" id="api-key-input" type="password" placeholder="API Key" />
-            <button class="api-key-save" id="api-key-save">保存</button>
-          </div>
-          <div class="api-key-input-row" style="margin-top:6px">
-            <input class="api-key-input" id="base-url-input" type="text" placeholder="Base URL (默认: https://api.deepseek.com)" />
-            <button class="api-key-save" id="base-url-save">保存</button>
-          </div>
-          <div class="api-key-input-row" style="margin-top:6px">
-            <input class="api-key-input" id="model-id-input" type="text" placeholder="Model ID (默认: deepseek-chat)" />
-            <button class="api-key-save" id="model-id-save">保存</button>
-          </div>
-          <div class="api-key-status" id="api-key-status">未配置 — 使用预设解读</div>
+        <div class="api-config-trigger" id="api-config-trigger">
+          <button class="nav-btn" id="open-api-config" style="width:100%">🔑 配置 AI 密钥解锁更多解读</button>
         </div>
       </div>
     </aside>
