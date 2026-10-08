@@ -27,6 +27,7 @@ const apiKeyBtn = document.getElementById('api-key-btn')!;
 const apiKeyInput = document.getElementById('api-key-input') as HTMLInputElement;
 const apiKeySave = document.getElementById('api-key-save')!;
 const apiKeyStatus = document.getElementById('api-key-status')!;
+const apiKeySection = document.getElementById('api-key-section')!;
 const collectionBar = document.getElementById('collection-bar')!;
 const baseUrlInput = document.getElementById('base-url-input') as HTMLInputElement;
 const modelIdInput = document.getElementById('model-id-input') as HTMLInputElement;
@@ -147,6 +148,14 @@ function bindEvents() {
     if (e.key === 'Enter') saveModelId();
   });
 
+  // API Key 按钮 — 打开配置区
+  apiKeyBtn.addEventListener('click', () => {
+    // 先确保 info-panel 是打开的
+    infoPanel.classList.remove('panel-closed');
+    apiKeySection.scrollIntoView({ behavior: 'smooth' });
+    apiKeyInput.focus();
+  });
+
   // AI 导师输入
   const tutorInput = document.getElementById('tutor-input') as HTMLInputElement;
   const tutorSend = document.getElementById('tutor-send')!;
@@ -197,8 +206,11 @@ function updateApiConfigUI() {
     apiKeyStatus.classList.remove('connected');
   }
 
-  baseUrlInput.value = config.baseUrl;
-  modelIdInput.value = config.modelId;
+  // 只显示用户自定义的值，不显示默认值
+  const storedBaseUrl = localStorage.getItem('iching_api_base_url') || '';
+  const storedModelId = localStorage.getItem('iching_api_model_id') || '';
+  baseUrlInput.value = storedBaseUrl;
+  modelIdInput.value = storedModelId;
 }
 
 // ===== 卦象选择 =====
@@ -268,6 +280,7 @@ function performBlindBox() {
   else if (roll < 0.2) num = 2;
   else num = Math.floor(Math.random() * 64) + 1;
 
+  blindboxHexNum = num;
   const hex = hexagrams.find((h) => h.number === num)!;
 
   const cover = document.getElementById('blindbox-cover')!;
@@ -289,8 +302,13 @@ function hideBlindbox() {
 }
 
 // ===== 分享卡片 =====
+// 全局变量：记录盲盒求签的结果卦象
+let blindboxHexNum: number | null = null;
+
 function showShareCard() {
-  const hex = hexagrams.find((h) => h.number === selectedHexNum)!;
+  // 优先显示盲盒求签的卦象，否则显示当前选中的卦象
+  const num = blindboxHexNum || selectedHexNum;
+  const hex = hexagrams.find((h) => h.number === num)!;
   document.getElementById('share-card-hex')!.textContent = hex.lines.map((l) => (l === 1 ? '─' : '──')).join('');
   document.getElementById('share-card-name')!.textContent = hex.name + '卦';
   document.getElementById('share-card-number')!.textContent = '#' + hex.number + ' · ' + hex.chinese;
@@ -364,8 +382,10 @@ function downloadShareCard() {
   ctx.font = '10px "Noto Sans SC", sans-serif';
   ctx.fillText('扫码或截图分享 · 易经 AI 学堂', 360, 900);
 
+  const shareNum = blindboxHexNum || selectedHexNum;
+  const shareHex = hexagrams.find((h) => h.number === shareNum);
   const link = document.createElement('a');
-  link.download = `iching-${hexagrams.find((h) => h.number === selectedHexNum)?.name || 'hex'}.png`;
+  link.download = `iching-${shareHex?.name || 'hex'}.png`;
   link.href = canvas.toDataURL('image/png');
   link.click();
 }
