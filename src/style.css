@@ -1,0 +1,530 @@
+/* ===== 易经 AI 学堂 — 样式 ===== */
+
+:root {
+  --bg: #0a0a0f;
+  --bg-panel: rgba(12, 12, 20, 0.88);
+  --fg: #f0ebe0;
+  --fg-muted: #8a8470;
+  --accent: #d4a853;
+  --accent-glow: rgba(212, 168, 83, 0.3);
+  --accent2: #c0392b;
+  --card: rgba(18, 18, 30, 0.75);
+  --border: rgba(212, 168, 83, 0.15);
+  --yang: #d4a853;
+  --yin: #5b7fa5;
+  --radius: 10px;
+  --font-display: 'Noto Serif SC', serif;
+  --font-body: 'Noto Sans SC', sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+}
+
+#app {
+  width: 100%; height: 100%;
+  position: relative;
+}
+
+/* ===== 顶部导航 ===== */
+#top-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 56px;
+  background: linear-gradient(180deg, rgba(10,10,15,0.95) 0%, rgba(10,10,15,0) 100%);
+  backdrop-filter: blur(8px);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--accent);
+  letter-spacing: 0.04em;
+}
+
+.logo-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 0 8px var(--accent-glow));
+}
+
+.nav-links {
+  display: flex;
+  gap: 4px;
+}
+
+.nav-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--fg-muted);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.nav-btn:hover {
+  color: var(--fg);
+  background: rgba(212, 168, 83, 0.08);
+}
+
+.nav-btn.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(212, 168, 83, 0.1);
+}
+
+.header-hint {
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0.6;
+}
+
+/* ===== 画布 ===== */
+#canvas-container {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+#three-canvas {
+  width: 100%; height: 100%;
+  display: block;
+}
+
+#loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  transition: opacity 0.6s ease;
+}
+
+#loading-overlay.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-spinner {
+  width: 40px; height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#loading-overlay p {
+  margin-top: 16px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+#error-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+
+.error-text {
+  color: var(--accent2);
+  font-size: 16px;
+}
+
+/* ===== 信息面板 ===== */
+#info-panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 320px;
+  z-index: 50;
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-y: auto;
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+}
+
+#info-panel.panel-closed {
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  z-index: 2;
+}
+
+.panel-header h2 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--fg);
+  flex: 1;
+}
+
+.hex-number {
+  font-size: 12px;
+  color: var(--accent);
+  background: rgba(212, 168, 83, 0.1);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.icon-btn {
+  background: transparent;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.2s;
+}
+
+.icon-btn:hover { color: var(--fg); }
+
+.panel-body {
+  padding: 16px 18px 24px;
+}
+
+/* 卦象符号显示 */
+.hexagram-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 20px 0;
+}
+
+.hexagram-lines {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.hex-line {
+  width: 80px;
+  height: 3px;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hex-line.yang {
+  background: var(--yang);
+  box-shadow: 0 0 12px var(--accent-glow);
+}
+
+.hex-line.yin {
+  background: var(--yin);
+  box-shadow: 0 0 8px rgba(91, 127, 165, 0.3);
+  position: relative;
+}
+
+.hex-line.yin::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 15%;
+  right: 15%;
+  height: 3px;
+  background: var(--bg);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+
+/* 卦象详情 */
+.hex-details {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 13px;
+}
+
+.detail-label {
+  color: var(--fg-muted);
+}
+
+.detail-value {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+/* AI 解读 */
+.ai-interpretation {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.ai-interpretation h3 {
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 10px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-interpretation h3::before {
+  content: '✦';
+  font-size: 10px;
+}
+
+.ai-text {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--fg-muted);
+}
+
+.ai-text p {
+  margin-bottom: 8px;
+}
+
+.ai-text p:last-child {
+  margin-bottom: 0;
+}
+
+/* ===== 隐藏面板 ===== */
+.hidden-panel {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 380px;
+  z-index: 50;
+  background: var(--bg-panel);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  transition: transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s ease;
+}
+
+.hidden-panel.panel-closed {
+  transform: translateX(calc(100% + 24px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ===== 数据分析面板 ===== */
+.chart-container {
+  width: 100%;
+  height: 220px;
+  background: rgba(0,0,0,0.3);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  position: relative;
+  overflow: hidden;
+}
+
+#chart-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.dot.yang { background: var(--yang); box-shadow: 0 0 6px var(--accent-glow); }
+.dot.yin { background: var(--yin); box-shadow: 0 0 6px rgba(91,127,165,0.3); }
+.dot.avg { background: var(--accent2); box-shadow: 0 0 6px rgba(192,57,43,0.3); }
+
+.chart-info {
+  font-size: 12px;
+  color: var(--fg-muted);
+  line-height: 1.6;
+}
+
+/* ===== AI 导师面板 ===== */
+.tutor-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tutor-msg {
+  display: flex;
+  gap: 10px;
+}
+
+.tutor-msg.ai { flex-direction: row; }
+.tutor-msg.user { flex-direction: row-reverse; }
+
+.msg-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.tutor-msg.ai .msg-avatar {
+  background: rgba(212, 168, 83, 0.15);
+  color: var(--accent);
+}
+
+.tutor-msg.user .msg-avatar {
+  background: rgba(192, 57, 43, 0.15);
+  color: var(--accent2);
+}
+
+.msg-bubble {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--fg);
+  max-width: 85%;
+}
+
+.tutor-msg.user .msg-bubble {
+  background: rgba(192, 57, 43, 0.1);
+  border-color: rgba(192, 57, 43, 0.2);
+}
+
+.tutor-input-area {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.tutor-input-area input {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 8px 14px;
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.tutor-input-area input:focus {
+  border-color: var(--accent);
+}
+
+.tutor-input-area input::placeholder {
+  color: var(--fg-muted);
+  opacity: 0.5;
+}
+
+.tutor-input-area button {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 20px;
+  padding: 8px 18px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tutor-input-area button:hover {
+  background: #e0b860;
+  transform: translateY(-1px);
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 768px) {
+  #info-panel { width: 260px; right: 8px; top: 56px; bottom: 8px; }
+  .hidden-panel { width: 280px; right: 8px; top: 56px; bottom: 8px; }
+  .nav-links { gap: 2px; }
+  .nav-btn { padding: 4px 10px; font-size: 12px; }
+  .header-hint { display: none; }
+}
+
+@media (max-width: 480px) {
+  #info-panel { width: calc(100% - 16px); right: 8px; }
+  .hidden-panel { width: calc(100% - 16px); right: 8px; }
+}
+
+/* ===== 滚动条 ===== */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--accent); }

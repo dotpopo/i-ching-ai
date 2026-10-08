@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>易经 AI 学堂 — 3D 卦象可视化与智能解读</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>☯</text></svg>">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 顶部导航 -->
+    <header id="top-bar">
+      <div class="logo">
+        <span class="logo-icon">☯</span>
+        <span class="logo-text">易经 AI 学堂</span>
+      </div>
+      <nav class="nav-links">
+        <button class="nav-btn active" data-tab="explore">卦象探索</button>
+        <button class="nav-btn" data-tab="analysis">数据分析</button>
+        <button class="nav-btn" data-tab="ai-tutor">AI 解读</button>
+      </nav>
+      <div class="header-actions">
+        <span class="header-hint">点击卦象或使用键盘 ← → 切换</span>
+      </div>
+    </header>
+
+    <!-- 主画布 -->
+    <main id="canvas-container">
+      <canvas id="three-canvas"></canvas>
+      <!-- 加载状态 -->
+      <div id="loading-overlay">
+        <div class="loader-spinner"></div>
+        <p>正在构建卦象空间…</p>
+      </div>
+      <!-- 错误状态 -->
+      <div id="error-overlay" style="display:none">
+        <p class="error-text">场景加载失败，请刷新页面重试</p>
+      </div>
+    </main>
+
+    <!-- 底部信息面板 -->
+    <aside id="info-panel" class="panel-open">
+      <div class="panel-header">
+        <h2 id="hexagram-name">乾卦</h2>
+        <span id="hexagram-number" class="hex-number">#1</span>
+        <button id="panel-close" class="icon-btn">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="hexagram-display">
+          <div id="hexagram-lines" class="hexagram-lines"></div>
+        </div>
+        <div class="hex-details">
+          <div class="detail-row">
+            <span class="detail-label">卦象</span>
+            <span id="hexagram-trigrams" class="detail-value">乾为天</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">性质</span>
+            <span id="hexagram-nature" class="detail-value">纯阳</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">象征</span>
+            <span id="hexagram-symbol" class="detail-value">天、父、君</span>
+          </div>
+        </div>
+        <div class="ai-interpretation" id="ai-interpretation">
+          <h3>AI 解读</h3>
+          <div id="ai-text" class="ai-text">
+            <p>乾卦为六十四卦之首，象征天、创始与纯粹阳刚之力。六爻皆阳，代表事物发展的六个阶段：元亨利贞。</p>
+            <p>在数据科学视角下，乾卦代表系统中的最大能量态——所有变量均处于正向激活状态，对应于时间序列中的持续增长阶段。</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- 数据分析面板 -->
+    <section id="analysis-panel" class="hidden-panel">
+      <div class="panel-header">
+        <h2>卦象数据分析</h2>
+        <button id="analysis-close" class="icon-btn">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="chart-container">
+          <canvas id="chart-canvas"></canvas>
+        </div>
+        <div class="chart-legend">
+          <span class="legend-item"><span class="dot yang"></span>阳爻</span>
+          <span class="legend-item"><span class="dot yin"></span>阴爻</span>
+          <span class="legend-item"><span class="dot avg"></span>均值分布</span>
+        </div>
+        <div id="chart-info" class="chart-info">
+          <p>悬停或点击 3D 卦象查看对应数据点</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI 导师面板 -->
+    <section id="tutor-panel" class="hidden-panel">
+      <div class="panel-header">
+        <h2>AI 导师</h2>
+        <button id="tutor-close" class="icon-btn">✕</button>
+      </div>
+      <div class="panel-body">
+        <div id="tutor-messages" class="tutor-messages">
+          <div class="tutor-msg ai">
+            <span class="msg-avatar">AI</span>
+            <div class="msg-bubble">
+              <p>欢迎来到易经 AI 学堂。我可以为你解读卦象、分析卦象之间的关系，或从数据科学角度解释传统智慧。</p>
+              <p>请选择一个卦象开始探索，或直接向我提问。</p>
+            </div>
+          </div>
+        </div>
+        <div class="tutor-input-area">
+          <input id="tutor-input" type="text" placeholder="输入你的问题…" />
+          <button id="tutor-send">发送</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
