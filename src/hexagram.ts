@@ -1,326 +1,332 @@
-/* ===== 3D 卦象网格 — 阴阳师符咒风格 ===== */
+/* ============================================================
+   卦象符咒 · 3D 单元
+   一张符纸 = 一个卦。纸面用 Canvas 真绘制（卦名 / 六爻 / 朱印），
+   未选中时整体压暗成"灵体"，选中时"觉醒"为实体符纸。
+   ============================================================ */
 import * as THREE from 'three';
 import type { Hexagram } from './data.js';
 
-export class HexagramMesh {
-  group: THREE.Group;
-  lines: THREE.Mesh[] = [];
-  hexagram: Hexagram;
-  private highlightIntensity: number = 0;
-  private baseY: number = 0;
-  private auraPlane!: THREE.Mesh;
-  private glowRing!: THREE.Mesh;
-  private outerRing!: THREE.Mesh;
-  private sealDisc!: THREE.Mesh;
-  private talismanPaper!: THREE.Mesh;
-  private redSeal!: THREE.Mesh;
-  private edgeGlow!: THREE.Mesh;
-  private spawnProgress: number = 0;
-  private spawnStarted: boolean = false;
-  private selectProgress: number = 0;
+const TEX_W = 256;
+const TEX_H = 448;
 
-  constructor(hexagram: Hexagram, position: THREE.Vector3) {
+/** 把卦象画成符纸贴图。真绘制，不是拼图。 */
+function makeTalismanTexture(hex: Hexagram): THREE.CanvasTexture {
+  const cv = document.createElement('canvas');
+  cv.width = TEX_W;
+  cv.height = TEX_H;
+  const g = cv.getContext('2d')!;
+  const yangCount = hex.lines.reduce((a: number, l) => a + l, 0);
+  const isYangDominant = yangCount > 3;
+
+  g.clearRect(0, 0, TEX_W, TEX_H);
+
+  // --- 符纸底 ---
+  const paper = g.createLinearGradient(0, 0, TEX_W, TEX_H);
+  paper.addColorStop(0, '#f6efe0');
+  paper.addColorStop(0.45, '#ece1cb');
+  paper.addColorStop(1, '#ddd0b6');
+  g.fillStyle = paper;
+  roundRect(g, 6, 6, TEX_W - 12, TEX_H - 12, 10);
+  g.fill();
+
+  // --- 纸纹：细横纹，模拟和纸 ---
+  g.save();
+  g.globalAlpha = 0.05;
+  g.strokeStyle = '#6b5a3e';
+  g.lineWidth = 1;
+  for (let y = 14; y < TEX_H - 14; y += 5) {
+    g.beginPath();
+    g.moveTo(12, y);
+    g.lineTo(TEX_W - 12, y);
+    g.stroke();
+  }
+  g.restore();
+
+  // --- 双线金框 ---
+  g.strokeStyle = 'rgba(185, 140, 44, 0.85)';
+  g.lineWidth = 3;
+  roundRect(g, 14, 14, TEX_W - 28, TEX_H - 28, 6);
+  g.stroke();
+  g.strokeStyle = 'rgba(185, 140, 44, 0.4)';
+  g.lineWidth = 1;
+  roundRect(g, 22, 22, TEX_W - 44, TEX_H - 44, 4);
+  g.stroke();
+
+  // --- 顶部：卦序 ---
+  g.fillStyle = 'rgba(120, 96, 56, 0.9)';
+  g.font = '600 22px "Shippori Mincho", "Noto Serif SC", serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillText(`第 ${hex.number} 卦`, TEX_W / 2, 52);
+
+  // --- 中部：卦名（大字） ---
+  g.save();
+  g.shadowColor = 'rgba(163, 18, 42, 0.28)';
+  g.shadowBlur = 10;
+  g.fillStyle = '#1b1a17';
+  g.font = '800 104px "Shippori Mincho", "Noto Serif SC", serif';
+  g.fillText(hex.name, TEX_W / 2, 150);
+  g.restore();
+
+  // 卦名下的朱红短横
+  g.fillStyle = 'rgba(163, 18, 42, 0.72)';
+  g.fillRect(TEX_W / 2 - 44, 208, 88, 3);
+
+  // --- 下部：六爻 ---
+  const barW = 132;
+  const barH = 15;
+  const gap = 15;
+  const startY = 246;
+  const x0 = (TEX_W - barW) / 2;
+
+  hex.lines.forEach((line, i) => {
+    // lines[0] 是初爻（最下），画的时候要反过来
+    const row = hex.lines.length - 1 - i;
+    const y = startY + row * (barH + gap);
+
+    if (line === 1) {
+      const grad = g.createLinearGradient(x0, y, x0 + barW, y);
+      grad.addColorStop(0, '#b98c2c');
+      grad.addColorStop(0.5, '#f0c869');
+      grad.addColorStop(1, '#b98c2c');
+      g.fillStyle = grad;
+      roundRect(g, x0, y, barW, barH, 4);
+      g.fill();
+    } else {
+      const half = (barW - 22) / 2;
+      g.fillStyle = '#6d4bb0';
+      roundRect(g, x0, y, half, barH, 4);
+      g.fill();
+      roundRect(g, x0 + half + 22, y, half, barH, 4);
+      g.fill();
+    }
+  });
+
+  // --- 底部：朱红印章 ---
+  const sealSize = 46;
+  const sx = TEX_W / 2 - sealSize / 2;
+  const sy = TEX_H - 78;
+  g.fillStyle = 'rgba(163, 18, 42, 0.9)';
+  roundRect(g, sx, sy, sealSize, sealSize, 6);
+  g.fill();
+  g.fillStyle = 'rgba(246, 239, 224, 0.95)';
+  g.font = '700 27px "Shippori Mincho", "Noto Serif SC", serif';
+  g.fillText(isYangDominant ? '阳' : '阴', TEX_W / 2, sy + sealSize / 2 + 1);
+
+  // --- 底部标签 ---
+  g.fillStyle = 'rgba(120, 96, 56, 0.72)';
+  g.font = '500 15px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  g.fillText(hex.chinese, TEX_W / 2, TEX_H - 44);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function roundRect(
+  g: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  g.beginPath();
+  g.moveTo(x + r, y);
+  g.arcTo(x + w, y, x + w, y + h, r);
+  g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r);
+  g.arcTo(x, y, x + w, y, r);
+  g.closePath();
+}
+
+/** 一张卦象符咒 */
+export class HexagramTalisman {
+  group: THREE.Group;
+  hexagram: Hexagram;
+  /** 供射线拾取命中判定的可见体 */
+  hitPlane!: THREE.Mesh;
+
+  private face!: THREE.Mesh;
+  private glow!: THREE.Mesh;
+  private baseRing!: THREE.Mesh;
+  private ringSpin!: THREE.Mesh;
+  private baseY: number;
+  private floatSeed: number;
+
+  private awaken = 0;        // 0 = 灵体, 1 = 实体符纸
+  private hoverGlow = 0;
+  private descend = 0;       // 降临进度
+
+  private static readonly DIM = new THREE.Color(0x8b8398);
+  private static readonly FULL = new THREE.Color(0xffffff);
+
+  constructor(hexagram: Hexagram, position: THREE.Vector3, angle: number) {
     this.hexagram = hexagram;
+    this.baseY = position.y;
+    this.floatSeed = Math.random() * Math.PI * 2;
+
     this.group = new THREE.Group();
     this.group.position.copy(position);
     this.group.userData.hexagramNumber = hexagram.number;
-    this.baseY = position.y;
+    // 面向阵外，让环绕观察时始终看到正面
+    this.group.rotation.y = -angle + Math.PI / 2;
 
-    this.createTalismanPaper();
-    this.createSealDisc();
-    this.createAuraPlane();
-    this.createLines();
-    this.createGlowRing();
-    this.createOuterRing();
-    this.createRedSeal();
-    this.createEdgeGlow();
+    this.buildFace();
+    this.buildGlow();
+    this.buildRings();
+
+    this.group.scale.setScalar(0.01);
   }
 
-  /** 符咒纸面 — 淡金色矩形背景 */
-  private createTalismanPaper() {
-    const paperGeo = new THREE.PlaneGeometry(1.8, 4.5);
-    const paperMat = new THREE.MeshBasicMaterial({
-      color: 0xf5e6c8,
+  /** 符纸本体 */
+  private buildFace() {
+    const geo = new THREE.PlaneGeometry(2.3, 4.0);
+
+    const mat = new THREE.MeshBasicMaterial({
+      map: makeTalismanTexture(this.hexagram),
       transparent: true,
-      opacity: 0.03,
       side: THREE.DoubleSide,
+      toneMapped: false,
+      color: HexagramTalisman.DIM.clone(),
+      depthWrite: false,
     });
-    this.talismanPaper = new THREE.Mesh(paperGeo, paperMat);
-    this.talismanPaper.position.y = -0.3;
-    this.group.add(this.talismanPaper);
+
+    this.face = new THREE.Mesh(geo, mat);
+    this.face.renderOrder = 2;
+    this.group.add(this.face);
+
+    // 拾取用：略大一点的不可见平面，射线更好命中
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+    this.hitPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 4.5), hitMat);
+    this.hitPlane.userData.hexagramNumber = this.hexagram.number;
+    this.group.add(this.hitPlane);
   }
 
-  /** 底座光盘 */
-  private createSealDisc() {
-    const yangCount = this.hexagram.lines.filter((l) => l === 1).length;
-    const isYangDominant = yangCount > 3;
-    const discColor = isYangDominant ? 0xe8c547 : 0x7a5aaa;
+  /** 背后的灵光 */
+  private buildGlow() {
+    const yangCount = this.hexagram.lines.reduce((a: number, l) => a + l, 0);
+    const color = yangCount > 3 ? 0xf0c869 : 0xa97fe8;
 
-    const discGeo = new THREE.CircleGeometry(1.2, 48);
-    const discMat = new THREE.MeshBasicMaterial({
-      color: discColor,
+    const geo = new THREE.PlaneGeometry(3.9, 5.7);
+    const mat = new THREE.MeshBasicMaterial({
+      color,
       transparent: true,
-      opacity: 0.04,
+      opacity: 0,
       side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
     });
-    this.sealDisc = new THREE.Mesh(discGeo, discMat);
-    this.sealDisc.rotation.x = -Math.PI / 2;
-    this.sealDisc.position.y = -3.0;
-    this.group.add(this.sealDisc);
+    this.glow = new THREE.Mesh(geo, mat);
+    this.glow.position.z = -0.06;
+    this.glow.renderOrder = 1;
+    this.group.add(this.glow);
   }
 
-  /** 背景光面 */
-  private createAuraPlane() {
-    const yangCount = this.hexagram.lines.filter((l) => l === 1).length;
-    const isYangDominant = yangCount > 3;
-    const auraColor = isYangDominant ? 0xe8c547 : 0x7a5aaa;
+  /** 脚下的法环 */
+  private buildRings() {
+    const yangCount = this.hexagram.lines.reduce((a: number, l) => a + l, 0);
+    const color = yangCount > 3 ? 0xf0c869 : 0xa97fe8;
 
-    const auraGeo = new THREE.PlaneGeometry(2.4, 3.2);
-    const auraMat = new THREE.MeshBasicMaterial({
-      color: auraColor,
-      transparent: true,
-      opacity: 0.06,
-      side: THREE.DoubleSide,
-    });
-    this.auraPlane = new THREE.Mesh(auraGeo, auraMat);
-    this.auraPlane.position.y = -0.5;
-    this.group.add(this.auraPlane);
-  }
-
-  /** 卦象线条 — 更宽更亮，像书法笔触 */
-  private createLines() {
-    const lineHeight = 1.2;
-    const lineWidth = 0.22;
-    const lineDepth = 0.22;
-    const gap = 0.2;
-    const spacing = lineHeight + gap;
-
-    this.hexagram.lines.forEach((line, i) => {
-      let geometry: THREE.BoxGeometry;
-      let material: THREE.MeshStandardMaterial;
-
-      if (line === 1) {
-        // 阳爻 — 金色，更亮更宽
-        geometry = new THREE.BoxGeometry(lineWidth, lineHeight, lineDepth);
-        material = new THREE.MeshStandardMaterial({
-          color: 0xe8c547,
-          emissive: 0xe8c547,
-          emissiveIntensity: 0.7,
-          metalness: 0.9,
-          roughness: 0.1,
-        });
-      } else {
-        // 阴爻 — 紫色分段
-        const halfHeight = (lineHeight - gap) / 2;
-        geometry = new THREE.BoxGeometry(lineWidth, halfHeight, lineDepth);
-        material = new THREE.MeshStandardMaterial({
-          color: 0x9b6bcf,
-          emissive: 0x7a5aaa,
-          emissiveIntensity: 0.5,
-          metalness: 0.7,
-          roughness: 0.3,
-        });
-      }
-
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.y = i * spacing - (this.hexagram.lines.length - 1) * spacing / 2;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      this.group.add(mesh);
-      this.lines.push(mesh);
-    });
-  }
-
-  /** 内圈光环 */
-  private createGlowRing() {
-    const ringGeo = new THREE.RingGeometry(0.6, 0.75, 48);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xc41e3a,
+      color,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0,
       side: THREE.DoubleSide,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      toneMapped: false,
     });
-    this.glowRing = new THREE.Mesh(ringGeo, ringMat);
-    this.glowRing.rotation.x = -Math.PI / 2;
-    this.glowRing.position.y = -3.1;
-    this.group.add(this.glowRing);
+
+    this.baseRing = new THREE.Mesh(new THREE.RingGeometry(0.95, 1.12, 40), ringMat.clone());
+    this.baseRing.rotation.x = -Math.PI / 2;
+    this.baseRing.position.y = -2.05;
+    this.group.add(this.baseRing);
+
+    this.ringSpin = new THREE.Mesh(new THREE.RingGeometry(1.35, 1.44, 4), ringMat.clone());
+    this.ringSpin.rotation.x = -Math.PI / 2;
+    this.ringSpin.position.y = -2.05;
+    this.group.add(this.ringSpin);
   }
 
-  /** 外圈边框 */
-  private createOuterRing() {
-    const outerGeo = new THREE.RingGeometry(1.3, 1.45, 48);
-    const outerMat = new THREE.MeshBasicMaterial({
-      color: 0xc41e3a,
-      transparent: true,
-      opacity: 0.12,
-      side: THREE.DoubleSide,
-    });
-    this.outerRing = new THREE.Mesh(outerGeo, outerMat);
-    this.outerRing.rotation.x = -Math.PI / 2;
-    this.outerRing.position.y = -3.05;
-    this.group.add(this.outerRing);
-  }
-
-  /** 红色印章 — 符咒上的红色印记 */
-  private createRedSeal() {
-    const sealGeo = new THREE.CircleGeometry(0.35, 32);
-    const sealMat = new THREE.MeshBasicMaterial({
-      color: 0xc41e3a,
-      transparent: true,
-      opacity: 0.15,
-      side: THREE.DoubleSide,
-    });
-    this.redSeal = new THREE.Mesh(sealGeo, sealMat);
-    this.redSeal.position.set(0.6, 1.8, 0.1);
-    this.group.add(this.redSeal);
-  }
-
-  /** 边缘光晕 — 符咒边缘发光 */
-  private createEdgeGlow() {
-    const edgeGeo = new THREE.PlaneGeometry(1.8, 4.5);
-    const edgeMat = new THREE.MeshBasicMaterial({
-      color: 0xe8c547,
-      transparent: true,
-      opacity: 0.0,
-      side: THREE.DoubleSide,
-    });
-    this.edgeGlow = new THREE.Mesh(edgeGeo, edgeMat);
-    this.edgeGlow.position.y = -0.3;
-    this.edgeGlow.position.z = -0.05;
-    this.group.add(this.edgeGlow);
-  }
-
-  update(elapsed: number, index: number, selectedNum: number, hoveredNum: number | null = null) {
-    // 弹入动画 — 符咒展开效果
-    if (!this.spawnStarted) {
-      this.spawnStarted = true;
-      setTimeout(() => {
-        this.spawnProgress = 0;
-      }, index * 25);
-    }
-
-    if (this.spawnProgress < 1) {
-      this.spawnProgress = Math.min(this.spawnProgress + 0.04, 1);
-      const t = 1 - Math.pow(1 - this.spawnProgress, 3);
-      this.group.scale.setScalar(t);
-      this.group.rotation.z = (1 - t) * 0.2;
-      this.group.rotation.x = (1 - t) * 0.08;
-    }
-
+  update(elapsed: number, index: number, selectedNum: number, hoveredNum: number | null) {
     const isSelected = this.hexagram.number === selectedNum;
     const isHovered = this.hexagram.number === hoveredNum;
 
-    // 选中时的降临效果
-    if (isSelected && this.selectProgress < 1) {
-      this.selectProgress = Math.min(this.selectProgress + 0.05, 1);
-    } else if (!isSelected && this.selectProgress > 0) {
-      this.selectProgress = Math.max(this.selectProgress - 0.06, 0);
-    }
-
-    const targetHighlight = isSelected ? 1 : (isHovered ? 0.3 : 0);
-    this.highlightIntensity += (targetHighlight - this.highlightIntensity) * 0.08;
-
-    // 更新发光强度
-    this.lines.forEach((line, i) => {
-      if (line.material instanceof THREE.MeshStandardMaterial) {
-        const baseEmissive = this.hexagram.lines[i] === 1 ? 0.7 : 0.5;
-        line.material.emissiveIntensity = baseEmissive + this.highlightIntensity * 1.5;
+    // --- 入场：从无到有，依次绽开 ---
+    const spawnTarget = 1;
+    const cur = this.group.scale.x;
+    if (cur < spawnTarget) {
+      const delay = index * 0.012;
+      if (elapsed > delay) {
+        const t = Math.min((elapsed - delay) / 0.85, 1);
+        const ease = 1 - Math.pow(1 - t, 4);
+        this.group.scale.setScalar(Math.max(0.01, ease));
       }
-    });
-
-    // 符咒纸面随选中状态变化
-    if (this.talismanPaper.material instanceof THREE.MeshBasicMaterial) {
-      const baseOpacity = isSelected ? 0.08 : 0.02;
-      this.talismanPaper.material.opacity = baseOpacity + this.selectProgress * 0.1;
     }
 
-    if (this.auraPlane.material instanceof THREE.MeshBasicMaterial) {
-      const baseOpacity = isSelected ? 0.15 : 0.04;
-      this.auraPlane.material.opacity = baseOpacity + this.highlightIntensity * 0.2;
+    // --- 觉醒度：选中 1 / 悬停 0.55 / 其余 0 ---
+    const awakenTarget = isSelected ? 1 : (isHovered ? 0.55 : 0);
+    this.awaken += (awakenTarget - this.awaken) * 0.09;
+
+    // --- 降临度 ---
+    const descendTarget = isSelected ? 1 : 0;
+    this.descend += (descendTarget - this.descend) * 0.07;
+
+    const hoverTarget = isHovered && !isSelected ? 1 : 0;
+    this.hoverGlow += (hoverTarget - this.hoverGlow) * 0.14;
+
+    // --- 颜色：灵体压暗，觉醒还原 ---
+    if (this.face.material instanceof THREE.MeshBasicMaterial) {
+      const lit = Math.min(1, this.awaken * 1.15);
+      this.face.material.color.copy(HexagramTalisman.DIM).lerp(HexagramTalisman.FULL, lit);
+      this.face.material.opacity = 0.66 + lit * 0.34;
     }
 
-    if (this.glowRing.material instanceof THREE.MeshBasicMaterial) {
-      const baseRingOpacity = isSelected ? 0.5 : 0.15;
-      this.glowRing.material.opacity = baseRingOpacity + Math.sin(elapsed * 3) * 0.08 * this.selectProgress;
+    // --- 灵光 ---
+    if (this.glow.material instanceof THREE.MeshBasicMaterial) {
+      const pulse = 0.5 + 0.5 * Math.sin(elapsed * 2.2 + this.floatSeed);
+      const base = isSelected ? 0.34 : 0.1;
+      this.glow.material.opacity = base * (0.7 + pulse * 0.3) + this.hoverGlow * 0.16;
+      const s = 1 + this.awaken * 0.3 + this.hoverGlow * 0.12;
+      this.glow.scale.set(s, s, 1);
     }
 
-    if (this.outerRing.material instanceof THREE.MeshBasicMaterial) {
-      const baseOuterOpacity = isSelected ? 0.35 : 0.08;
-      this.outerRing.material.opacity = baseOuterOpacity + this.highlightIntensity * 0.25;
+    // --- 法环 ---
+    const ringOn = Math.max(this.awaken, this.hoverGlow * 0.6);
+    if (this.baseRing.material instanceof THREE.MeshBasicMaterial) {
+      this.baseRing.material.opacity = ringOn * 0.5;
+      this.baseRing.scale.setScalar(1 + this.awaken * 0.22 + Math.sin(elapsed * 3) * 0.02 * this.awaken);
+    }
+    if (this.ringSpin.material instanceof THREE.MeshBasicMaterial) {
+      this.ringSpin.material.opacity = ringOn * 0.34;
+      this.ringSpin.rotation.z += 0.012 + this.awaken * 0.03;
     }
 
-    if (this.sealDisc.material instanceof THREE.MeshBasicMaterial) {
-      const baseDiscOpacity = isSelected ? 0.1 : 0.03;
-      this.sealDisc.material.opacity = baseDiscOpacity + this.highlightIntensity * 0.08;
-    }
-
-    if (this.redSeal.material instanceof THREE.MeshBasicMaterial) {
-      const baseSealOpacity = isSelected ? 0.35 : 0.1;
-      this.redSeal.material.opacity = baseSealOpacity + this.selectProgress * 0.2;
-      // 印章脉动
-      const pulse = 1 + Math.sin(elapsed * 4) * 0.1 * this.selectProgress;
-      this.redSeal.scale.setScalar(pulse);
-    }
-
-    if (this.edgeGlow.material instanceof THREE.MeshBasicMaterial) {
-      const baseEdgeOpacity = isSelected ? 0.08 : 0.0;
-      this.edgeGlow.material.opacity = baseEdgeOpacity + this.selectProgress * 0.12;
-    }
-
-    // 选中时浮动 + 旋转 + 脉动 + 降临效果
+    // --- 位移 ---
     if (isSelected) {
-      // 符咒降临 — 从上方缓缓下降（更 dramatic）
-      const descendOffset = (1 - this.selectProgress) * 4;
-      this.group.position.y = this.baseY + Math.sin(elapsed * 2) * 0.5 - descendOffset;
-      this.group.rotation.y += 0.02;
-      // 脉动缩放 — 更大更 dramatic
-      const pulse = 2.0 + Math.sin(elapsed * 3) * 0.08 * this.selectProgress;
-      if (this.spawnProgress >= 1) {
-        this.group.scale.setScalar(pulse);
-      }
-      // 选中时光环旋转加速
-      if (this.glowRing.material instanceof THREE.MeshBasicMaterial) {
-        this.glowRing.rotation.z += 0.02;
-      }
-      if (this.outerRing.material instanceof THREE.MeshBasicMaterial) {
-        this.outerRing.rotation.z -= 0.015;
-      }
+      // 降临：从上方落定 + 上浮
+      const drop = (1 - this.descend) * 5.5;
+      this.group.position.y = this.baseY + Math.sin(elapsed * 1.6) * 0.28 - drop;
+      this.group.rotation.y += 0.006;
+      const pulse = 1.85 + Math.sin(elapsed * 2.4) * 0.06 * this.descend;
+      this.group.scale.setScalar(Math.max(0.01, pulse));
     } else {
-      // 未选中时 — 其他卦象微微变暗
-      const dimFactor = selectedNum !== 1 ? 0.7 : 1.0;
-      this.group.position.y = this.baseY + Math.sin(elapsed * 0.5 + index * 0.15) * 0.15;
-      this.group.rotation.y += 0.003;
-      if (this.spawnProgress >= 1) {
-        const hoverScale = isHovered ? 1.15 : 1.0;
-        this.group.scale.setScalar(hoverScale * dimFactor);
-      }
-      // 未选中时降低发光
-      if (this.auraPlane.material instanceof THREE.MeshBasicMaterial) {
-        this.auraPlane.material.opacity *= 0.95;
-      }
+      this.group.position.y = this.baseY + Math.sin(elapsed * 0.6 + this.floatSeed) * 0.22;
+      this.group.rotation.y += 0.0016;
+      const s = 1 + this.hoverGlow * 0.16;
+      this.group.scale.setScalar(Math.max(0.01, s));
     }
   }
 
   dispose() {
-    this.lines.forEach((line: THREE.Mesh) => {
-      line.geometry?.dispose();
-      if (Array.isArray(line.material)) {
-        line.material.forEach((m: THREE.Material) => m.dispose());
-      } else {
-        line.material?.dispose();
-      }
-    });
-    this.lines = [];
-
     this.group.traverse((child: THREE.Object3D) => {
       if (child instanceof THREE.Mesh) {
         child.geometry?.dispose();
-        if (Array.isArray(child.material)) {
-          child.material.forEach((m: THREE.Material) => m.dispose());
-        } else {
-          child.material?.dispose();
-        }
+        const mats = Array.isArray(child.material) ? child.material : [child.material];
+        mats.forEach((m) => {
+          if (m instanceof THREE.MeshBasicMaterial && m.map) m.map.dispose();
+          m?.dispose();
+        });
       }
     });
   }

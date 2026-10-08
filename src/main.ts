@@ -1,1056 +1,1509 @@
-/* ===== 易经 AI 学堂 — 主入口 ===== */
+/* ============================================================
+   天机星阵 · 应用主逻辑
+   ============================================================ */
 import * as THREE from 'three';
 import { IChingScene } from './scene.js';
 import { hexagrams, generateHexagramStats } from './data.js';
 import type { Hexagram } from './data.js';
-import { getApiConfig, saveApiConfig, callChatCompletion } from './api-config.js';
+import {
+  getApiConfig,
+  saveApiConfig,
+  callChatCompletion,
+  callMany,
+  testConnection,
+} from './api-config.js';
+import type { ChatMessage } from './api-config.js';
 
-// ===== 全局状态 =====
+/* ---------- DOM ---------- */
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+const canvas = $<HTMLCanvasElement>('three-canvas');
+const loadingOverlay = $('loading-overlay');
+const errorOverlay = $('error-overlay');
+const intro = $('intro');
+const introEnter = $('intro-enter');
+const hoverTooltip = $('hover-tooltip');
+const screenFlash = $('screen-flash');
+const descentBeam = $('descent-beam');
+
+const navBtns = document.querySelectorAll<HTMLButtonElement>('.nav-btn');
+const infoPanel = $('info-panel');
+const analysisPanel = $('analysis-panel');
+const tutorPanel = $('tutor-panel');
+const searchLayer = $('search-layer');
+const searchInput = $<HTMLInputElement>('search-input');
+const searchResults = $('search-results');
+const toastLayer = $('toast-layer');
+
+const panelTitle = $('panel-title');
+const hexNumber = $('hexagram-number');
+const hexTrigrams = $('hexagram-trigrams');
+const hexNature = $('hexagram-nature');
+const hexSymbol = $('hexagram-symbol');
+const hexLines = $('hexagram-lines');
+const aiText = $('ai-text');
+const aiStatus = $('ai-status');
+const pTabs = document.querySelectorAll<HTMLButtonElement>('.ptab');
+
+const chartInfo = $('chart-info');
+const radarCaption = $('radar-caption');
+
+const askCurrent = $('ask-current');
+const questionInput = $<HTMLTextAreaElement>('question-input');
+const askChips = $('ask-chips');
+const generateBtn = $<HTMLButtonElement>('generate-btn');
+const cardContainer = $('ai-card-container');
+const cardActions = $('card-actions');
+
+const oracleBtn = $('oracle-btn');
+const collectionBar = $('collection-bar');
+
+const apiKeyBtn = $('api-key-btn');
+const apiModal = $('api-config-modal');
+const modalApiKey = $<HTMLInputElement>('modal-api-key');
+const modalBaseUrl = $<HTMLInputElement>('modal-base-url');
+const modalModelId = $<HTMLInputElement>('modal-model-id');
+const modalApiSave = $('modal-api-save');
+const modalApiStatus = $('modal-api-status');
+
+const blindboxModal = $('blindbox-modal');
+const blindboxCover = $('blindbox-cover');
+const blindboxName = $('blindbox-name');
+const blindboxNumber = $('blindbox-number');
+const blindboxResult = $('blindbox-result');
+const blindboxInterpretation = $('blindbox-interpretation');
+
+const shareCard = $('share-card');
+const shareCanvas = $<HTMLCanvasElement>('share-canvas');
+
+/* ---------- 状态 ---------- */
+type ViewKey = 'classic' | 'modern' | 'plain' | 'action';
+type OracleTexts = Record<ViewKey, string>;
+
 let scene: IChingScene | null = null;
-let currentTab: 'explore' | 'analysis' | 'ai-tutor' = 'explore';
+let currentTab: 'explore' | 'analysis' | 'tutor' = 'explore';
 let selectedHexNum = 1;
-let collectedHexagrams = new Set<number>();
+let activeView: ViewKey = 'classic';
+let bonded = new Set<number>();
 let blindboxHexNum: number | null = null;
-let isAiConfigured = false;
-let infoPanelVisible = true;
-let mouseNearRightEdge = false;
+let isAiOn = false;
+let searchCursor = 0;
+let searchMatches: Hexagram[] = [];
+let introDone = false;
 
-// DOM 引用
-const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
-const loadingOverlay = document.getElementById('loading-overlay')!;
-const errorOverlay = document.getElementById('error-overlay')!;
-const infoPanel = document.getElementById('info-panel')!;
-const panelClose = document.getElementById('panel-close')!;
-const analysisPanel = document.getElementById('analysis-panel')!;
-const analysisClose = document.getElementById('analysis-close')!;
-const tutorPanel = document.getElementById('tutor-panel')!;
-const tutorClose = document.getElementById('tutor-close')!;
-const navBtns = document.querySelectorAll('.nav-btn');
-const oracleBtn = document.getElementById('oracle-btn')!;
-const blindboxModal = document.getElementById('blindbox-modal')!;
-const shareCard = document.getElementById('share-card')!;
-const apiKeyBtn = document.getElementById('api-key-btn')!;
-const apiConfigModal = document.getElementById('api-config-modal')!;
-const apiConfigClose = document.getElementById('api-config-close')!;
-const modalApiKey = document.getElementById('modal-api-key') as HTMLInputElement;
-const modalBaseUrl = document.getElementById('modal-base-url') as HTMLInputElement;
-const modalModelId = document.getElementById('modal-model-id') as HTMLInputElement;
-const modalApiSave = document.getElementById('modal-api-save')!;
-const modalApiStatus = document.getElementById('modal-api-status')!;
-const aiUnlockBtn = document.getElementById('ai-unlock-btn')!;
-const aiUnlockSection = document.getElementById('ai-unlock-section')!;
-const collectionBar = document.getElementById('collection-bar')!;
+/** 当前卦的四种解读文本（内置兜底 + AI 覆盖） */
+let oracleTexts: OracleTexts = { classic: '', modern: '', plain: '', action: '' };
+let aiGenerationId = 0;
+let aiDebounce = 0;
+let typewriterHandle = 0;
 
-// ===== 初始化 =====
+const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ============================================================
+   内置兜底文本（AI 未接通或失败时用）
+   ============================================================ */
+const PLAIN_TEMPLATES: Record<number, string> = {
+  1: '天就像一位很厉害的大家长，罩着整个世界。乾卦在说，做人可以像天那样，有力量，也有分寸。',
+  2: '大地妈妈很温柔，她把所有东西都接住，让它们慢慢长大。坤卦在说，温柔也是一种力量。',
+  3: '刚学走路的时候总会摔几跤。屯卦在说，开头难是正常的，别急着跑，先站稳。',
+  4: '小朋友第一次上学，什么都不懂。蒙卦在说，不懂就问，问多了就懂了。',
+  5: '等蛋糕烤好需要时间，掀开盖子只会烤不熟。需卦在说，有些事只能等。',
+  6: '吵架的时候，谁都不肯先低头。讼卦在说，把话说开，比赢更重要。',
+};
+
+const ACTION_TEMPLATES: Record<number, string> = {
+  1: '现在是把状态拉满的时候。像太阳刚升起来，先把最要紧的一件事做漂亮。',
+  2: '先听，再答。这段时间最有力的动作不是往前冲，是把别人的话接住。',
+  3: '新开始本来就乱。今天只定一个小目标，完成它，比想清楚整条路更有用。',
+  4: '带着问题去找人问。你缺的不是能力，是有人给你指一下方向。',
+  5: '别催。把能准备的准备好，然后等那个时机自己走到你面前。',
+  6: '开口之前先想一句：对方听完会怎么想。这一句能省掉很多麻烦。',
+};
+
+function plainFor(hex: Hexagram): string {
+  return PLAIN_TEMPLATES[hex.number]
+    ?? `${hex.name}卦的处境是「${hex.symbol}」。把它想成天气：${hex.nature}之象，该收的时候收，该动的时候动。`;
+}
+
+function actionFor(hex: Hexagram): string {
+  return ACTION_TEMPLATES[hex.number]
+    ?? `${hex.name}卦提示：先看清自己在哪一步，再决定要不要动。当下最该做的是把「${hex.symbol}」这件事放到台面上想清楚。`;
+}
+
+function fallbackTexts(hex: Hexagram): OracleTexts {
+  return {
+    classic: hex.interpretation,
+    modern: hex.dataScience,
+    plain: plainFor(hex),
+    action: actionFor(hex),
+  };
+}
+
+/* ============================================================
+   初始化
+   ============================================================ */
+/** 初始化阶段追踪：崩在哪一步能直接看出来 */
+const bootTrace: string[] = [];
+
+function stage(label: string, fn: () => void) {
+  const t0 = performance.now();
+  try {
+    fn();
+    const line = `${label} ok (${(performance.now() - t0).toFixed(0)}ms)`;
+    bootTrace.push(line);
+    console.log('[boot]', line);
+  } catch (err) {
+    const msg = `阶段「${label}」失败：${(err as Error)?.message ?? String(err)}`;
+    console.error('[boot]', msg, err);
+    throw new Error(msg);
+  }
+}
+
 function init() {
   try {
-    const testCanvas = document.createElement('canvas');
-    const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
-    if (!gl) throw new Error('WebGL not supported');
-
-    // 加载已收藏的卦象
-    const saved = localStorage.getItem('iching_collected');
-    if (saved) {
-      try { collectedHexagrams = new Set(JSON.parse(saved)); } catch {}
-    }
-
-    // 检查 API 配置状态
-    const config = getApiConfig();
-    isAiConfigured = !!config.apiKey;
-
-    scene = new IChingScene(canvas, {
-      onSelect: handleHexagramSelect,
-      onHover: handleHexagramHover,
-      onOrbClick: handleOrbClick,
-      onOrbHover: handleOrbHover,
+    stage('检测 WebGL', () => {
+      const probe = document.createElement('canvas');
+      const gl = probe.getContext('webgl2') || probe.getContext('webgl');
+      if (!gl) throw new Error('浏览器未提供 WebGL 上下文');
+      // 探针用完立刻释放，避免占用一个宝贵的上下文名额
+      const lose = gl.getExtension('WEBGL_lose_context');
+      lose?.loseContext();
     });
-    scene.start();
 
-    setTimeout(() => loadingOverlay.classList.add('hidden'), 800);
+    stage('读取本地收藏', () => {
+      const saved = localStorage.getItem('iching_bonded');
+      if (!saved) return;
+      const arr = JSON.parse(saved);
+      if (Array.isArray(arr)) bonded = new Set(arr.filter((n) => typeof n === 'number'));
+    });
 
-    bindEvents();
-    updateInfoPanel(1);
-    drawChart(1);
-    renderCollectionBar();
-    updateApiConfigUI();
-    updateAiUnlockButton();
+    stage('读取 AI 配置', () => {
+      isAiOn = !!getApiConfig().apiKey;
+    });
 
+    stage('构建 3D 星阵', () => {
+      scene = new IChingScene(canvas, {
+        onHover: onHexHover,
+        onOrbHover: onOrbHover,
+      });
+      scene.start();
+      // 开发期调试钩子：可在控制台里 scene.renderer.info 看绘制统计，
+      // 也可以临时 scene.bloom.enabled = false 做性能对比
+      if (import.meta.env.DEV) {
+        (window as unknown as { scene?: IChingScene }).scene = scene;
+      }
+    });
+
+    stage('绑定交互', () => bindEvents());
+    stage('渲染首屏卦象', () => selectHexagram(1, false));
+    stage('渲染式神录', () => renderBondBar());
+    stage('同步 AI 状态', () => syncApiState());
+    stage('生成问卜示例', () => buildAskChips());
+    stage('绘制命盘', () => drawCharts(1));
+
+    setTimeout(() => loadingOverlay.classList.add('is-gone'), 620);
+    console.log('[boot] 全部完成', bootTrace.length, '个阶段');
   } catch (err) {
-    console.error('初始化失败:', err);
-    loadingOverlay.style.display = 'none';
-    errorOverlay.style.display = 'flex';
-  }
-}
-
-// ===== 事件绑定 =====
-function bindEvents() {
-  window.addEventListener('mousemove', (e) => {
-    if (!scene) return;
-    const nx = (e.clientX / window.innerWidth) * 2 - 1;
-    const ny = -(e.clientY / window.innerHeight) * 2 + 1;
-    scene.setMouse(nx, ny);
-
-    // 更新悬停提示位置
-    const tooltip = document.getElementById('hover-tooltip')!;
-    tooltip.style.left = e.clientX + 'px';
-    tooltip.style.top = e.clientY + 'px';
-
-    // 右侧边缘检测 — 鼠标靠近右边缘时显示信息面板
-    const nearRightEdge = e.clientX > window.innerWidth - 80;
-    if (nearRightEdge !== mouseNearRightEdge) {
-      mouseNearRightEdge = nearRightEdge;
-      if (!infoPanelVisible && mouseNearRightEdge) {
-        infoPanel.classList.remove('panel-closed');
-        infoPanelVisible = true;
+    console.error('[boot] 初始化失败', err);
+    loadingOverlay.classList.add('is-gone');
+    const detail = document.getElementById('error-detail');
+    if (detail) {
+      detail.textContent = (err as Error)?.message ?? '未知错误';
+      if (bootTrace.length) {
+        detail.textContent += `（已成功：${bootTrace.length} 个阶段，最后一步是「${bootTrace[bootTrace.length - 1]}」）`;
       }
     }
-  });
+    errorOverlay.hidden = false;
+  }
+}
 
-  window.addEventListener('click', (e) => {
+/* ============================================================
+   事件绑定
+   ============================================================ */
+function bindEvents() {
+  introEnter.addEventListener('click', enterApp);
+
+  window.addEventListener('pointermove', (e) => {
     if (!scene) return;
-    if (e.target instanceof HTMLElement && e.target.closest('#info-panel, #analysis-panel, #tutor-panel, #blindbox-modal, #share-card, #api-config-modal')) return;
+    scene.setMouse(
+      (e.clientX / window.innerWidth) * 2 - 1,
+      -(e.clientY / window.innerHeight) * 2 + 1
+    );
+    hoverTooltip.style.left = `${e.clientX}px`;
+    hoverTooltip.style.top = `${e.clientY}px`;
+  });
 
-    // 检测中央球体点击 — 快速求签
-    if (scene.checkOrbClick()) {
-      handleOrbClick();
-      triggerScreenFlash();
-      return;
-    }
-
-    const hovered = scene.updateRaycast();
-    if (hovered !== null) {
-      handleHexagramSelect(hovered);
-      triggerScreenFlash();
+  canvas.addEventListener('click', () => {
+    if (!scene || !introDone) return;
+    const picked = scene.pick();
+    if (picked.hexagram !== null) {
+      selectHexagram(picked.hexagram, true);
     }
   });
 
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      selectedHexNum = selectedHexNum >= 64 ? 1 : selectedHexNum + 1;
-      handleHexagramSelect(selectedHexNum);
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      selectedHexNum = selectedHexNum <= 1 ? 64 : selectedHexNum - 1;
-      handleHexagramSelect(selectedHexNum);
-    } else if (e.key === 'Escape') {
-      closeAllPanels();
-      hideBlindbox();
-      hideShareCard();
-      hideApiConfigModal();
-    }
-  });
+  window.addEventListener('keydown', onKeyDown);
 
-  // 导航标签
   navBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const tab = (btn as HTMLElement).dataset.tab as 'explore' | 'analysis' | 'ai-tutor';
-      switchTab(tab);
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab as typeof currentTab));
+  });
+
+  $('panel-close').addEventListener('click', () => closeInfo());
+  $('analysis-close').addEventListener('click', () => analysisPanel.classList.add('is-closed'));
+  $('tutor-close').addEventListener('click', () => tutorPanel.classList.add('is-closed'));
+
+  pTabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      activeView = tab.dataset.view as ViewKey;
+      pTabs.forEach((t) => t.classList.toggle('is-active', t === tab));
+      renderOracleText(false);
     });
   });
 
-  // 面板关闭
-  panelClose.addEventListener('click', () => {
-    infoPanel.classList.add('panel-closed');
-    infoPanelVisible = false;
+  $('collect-btn').addEventListener('click', toggleBond);
+  $('ask-btn').addEventListener('click', () => {
+    switchTab('tutor');
+    questionInput.focus();
   });
-  analysisClose.addEventListener('click', () => analysisPanel.classList.add('panel-closed'));
-  tutorClose.addEventListener('click', () => tutorPanel.classList.add('panel-closed'));
 
-  // 求签按钮
-  oracleBtn.addEventListener('click', performBlindBox);
+  $('search-toggle').addEventListener('click', () => openSearch());
+  $('search-close').addEventListener('click', () => closeSearch());
+  searchInput.addEventListener('input', runSearch);
+  searchInput.addEventListener('keydown', onSearchKey);
 
-  // 盲盒关闭
-  document.getElementById('blindbox-close')!.addEventListener('click', hideBlindbox);
+  apiKeyBtn.addEventListener('click', openApiModal);
+  $('api-config-close').addEventListener('click', closeApiModal);
+  apiModal.addEventListener('click', (e) => {
+    if (e.target === apiModal) closeApiModal();
+  });
+  modalApiSave.addEventListener('click', saveApiFromModal);
+  [modalApiKey, modalBaseUrl, modalModelId].forEach((el) => {
+    el.addEventListener('keydown', (e) => {
+      if ((e as KeyboardEvent).key === 'Enter') saveApiFromModal();
+    });
+  });
+
+  oracleBtn.addEventListener('click', rollOracle);
+  $('blindbox-close').addEventListener('click', () => blindboxModal.classList.remove('is-on'));
   blindboxModal.addEventListener('click', (e) => {
-    if (e.target === blindboxModal) hideBlindbox();
+    if (e.target === blindboxModal) blindboxModal.classList.remove('is-on');
+  });
+  $('blindbox-share').addEventListener('click', () => {
+    blindboxModal.classList.remove('is-on');
+    openShareCard();
+  });
+  $('blindbox-collect').addEventListener('click', () => {
+    const num = blindboxHexNum ?? selectedHexNum;
+    selectHexagram(num, true);
+    if (!bonded.has(num)) toggleBond();
+    blindboxModal.classList.remove('is-on');
   });
 
-  // 盲盒分享
-  document.getElementById('blindbox-share')!.addEventListener('click', () => showShareCard());
-  document.getElementById('blindbox-collect')!.addEventListener('click', collectCurrentHexagram);
-
-  // 分享卡片关闭
-  document.getElementById('share-close')!.addEventListener('click', hideShareCard);
-  document.getElementById('share-download')!.addEventListener('click', downloadShareCard);
-
-  // API Key 按钮 — 打开配置弹窗
-  apiKeyBtn.addEventListener('click', () => {
-    showApiConfigModal();
+  $('share-close').addEventListener('click', () => shareCard.classList.remove('is-on'));
+  shareCard.addEventListener('click', (e) => {
+    if (e.target === shareCard) shareCard.classList.remove('is-on');
   });
+  $('share-download').addEventListener('click', downloadShareCard);
 
-  // API 配置弹窗关闭
-  apiConfigClose.addEventListener('click', hideApiConfigModal);
-  apiConfigModal.addEventListener('click', (e) => {
-    if (e.target === apiConfigModal) hideApiConfigModal();
-  });
-
-  // API 配置保存
-  modalApiSave.addEventListener('click', saveApiConfigFromModal);
-  modalApiKey.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveApiConfigFromModal();
-  });
-  modalBaseUrl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveApiConfigFromModal();
-  });
-  modalModelId.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') saveApiConfigFromModal();
-  });
-
-  // AI 解锁按钮
-  aiUnlockBtn.addEventListener('click', () => {
-    if (isAiConfigured) {
-      switchTab('ai-tutor');
-    } else {
-      showApiConfigModal();
-    }
-  });
-
-  // AI 卡片生成器
-  const generateBtn = document.getElementById('generate-btn')!;
-  generateBtn.addEventListener('click', generateAiCard);
-  const questionInput = document.getElementById('question-input') as HTMLTextAreaElement;
+  generateBtn.addEventListener('click', generateAnswer);
   questionInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-      generateAiCard();
-    }
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generateAnswer();
   });
+  $('card-download').addEventListener('click', downloadAnswerCard);
+  $('card-share').addEventListener('click', shareAnswerCard);
 
-  // 卡片下载和分享
-  document.getElementById('card-download')!.addEventListener('click', downloadAiCard);
-  document.getElementById('card-share')!.addEventListener('click', shareAiCard);
+  // 后台/前台：暂停渲染交给 scene 自己处理
+  window.addEventListener('beforeunload', () => scene?.dispose());
 }
 
-// ===== API 配置弹窗 =====
-function showApiConfigModal() {
-  // 所有输入框彻底清空，不显示任何默认值
-  modalApiKey.value = '';
-  modalBaseUrl.value = '';
-  modalModelId.value = '';
-  modalApiStatus.textContent = '';
-  modalApiStatus.style.color = '';
-  apiConfigModal.classList.add('visible');
-}
+function onKeyDown(e: KeyboardEvent) {
+  const tag = (e.target as HTMLElement)?.tagName;
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA';
 
-function hideApiConfigModal() {
-  apiConfigModal.classList.remove('visible');
-}
-
-async function saveApiConfigFromModal() {
-  const key = modalApiKey.value.trim();
-  const baseUrl = modalBaseUrl.value.trim();
-  const modelId = modalModelId.value.trim();
-
-  const config: Record<string, string> = {};
-  if (key) config.apiKey = key;
-  if (baseUrl) config.baseUrl = baseUrl;
-  if (modelId) config.modelId = modelId;
-  saveApiConfig(config);
-
-  // 验证配置
-  const newConfig = getApiConfig();
-  if (newConfig.apiKey) {
-    modalApiStatus.textContent = '正在验证连接…';
-    modalApiStatus.style.color = 'var(--gold)';
-    try {
-      await callChatCompletion([
-        { role: 'system', content: '你好' },
-        { role: 'user', content: '测试连接' },
-      ], newConfig);
-      isAiConfigured = true;
-      modalApiStatus.textContent = '✓ 连接成功！AI 解读已激活';
-      modalApiStatus.style.color = 'var(--gold)';
-    } catch (err) {
-      modalApiStatus.textContent = '✗ 连接失败，请检查 API Key';
-      modalApiStatus.style.color = 'var(--crimson)';
-    }
-  } else {
-    isAiConfigured = false;
-    modalApiStatus.textContent = '未配置 API Key，使用预设解读';
-    modalApiStatus.style.color = '';
+  if (e.key === 'Escape') {
+    closeSearch();
+    closeApiModal();
+    blindboxModal.classList.remove('is-on');
+    shareCard.classList.remove('is-on');
+    if (!typing) closeAllPanels();
+    return;
   }
 
-  updateApiConfigUI();
-  updateAiUnlockButton();
-  updateAiInterpretation(hexagrams.find((h) => h.number === selectedHexNum)!);
-  setTimeout(() => hideApiConfigModal(), 1500);
-}
+  if (typing) return;
 
-function updateApiConfigUI() {
-  const config = getApiConfig();
-  if (config.apiKey) {
-    apiKeyBtn.textContent = '🔑 已连接';
-    apiKeyBtn.classList.add('connected');
-  } else {
-    apiKeyBtn.textContent = '🔑 API';
-    apiKeyBtn.classList.remove('connected');
+  if (e.key === '/' ) {
+    e.preventDefault();
+    openSearch();
+    return;
+  }
+
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (introDone) rollOracle();
+    return;
+  }
+
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    const step = e.key === 'ArrowRight' ? 1 : -1;
+    const next = ((selectedHexNum - 1 + step + 64) % 64) + 1;
+    selectHexagram(next, true);
   }
 }
 
-// ===== AI 解锁按钮状态 =====
-function updateAiUnlockButton() {
-  if (isAiConfigured) {
-    aiUnlockBtn.classList.add('unlocked');
-    aiUnlockBtn.querySelector('.unlock-text')!.textContent = '🔓 AI 解读已解锁';
-    aiUnlockBtn.querySelector('.unlock-icon')!.textContent = '🔓';
-    aiUnlockSection.style.display = 'none';
-  } else {
-    aiUnlockBtn.classList.remove('unlocked');
-    aiUnlockBtn.querySelector('.unlock-text')!.textContent = '✨ 解锁 AI 解读';
-    aiUnlockBtn.querySelector('.unlock-icon')!.textContent = '✨';
-    aiUnlockSection.style.display = '';
+function enterApp() {
+  introDone = true;
+  intro.classList.add('is-gone');
+  flash(0.42);
+  scene?.triggerBurst(new THREE.Vector3(0, 3, 0));
+  showToast('星阵已开 · 点卦象或按空格求签');
+}
+
+/* ============================================================
+   卦象选择
+   ============================================================ */
+/** 防重入：选中流程里会碰到 DOM 重建与异步请求，必须挡住递归 */
+let selecting = false;
+
+function selectHexagram(num: number, focus: boolean) {
+  if (selecting) return;
+  selecting = true;
+  try {
+    selectedHexNum = num;
+    const hex = hexagrams.find((h) => h.number === num);
+    if (!hex) return;
+
+    updatePanel(hex);
+    drawCharts(num);
+    updateAskCurrent(hex);
+    if (focus) scene?.focusOnHexagram(num);
+    scene?.selectHexagram(num);
+  } finally {
+    selecting = false;
   }
 }
 
-// ===== 卦象选择 =====
-function handleHexagramSelect(num: number) {
-  selectedHexNum = num;
-  updateInfoPanel(num);
-  drawChart(num);
-  scene?.focusOnHexagram(num);
-  // 触发粒子爆发
-  const idx = hexagrams.findIndex((h) => h.number === num);
-  if (idx >= 0 && scene) {
-    const count = hexagrams.length;
-    const angle = (idx / count) * Math.PI * 2;
-    const radius = 18;
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * radius;
-    const y = Math.sin(angle * 2) * 1.2;
-    scene.triggerBurst(new THREE.Vector3(x, y, z));
-  }
-  if (currentTab === 'ai-tutor') updateAITutor(num);
-}
-
-function handleHexagramHover(num: number | null) {
-  document.body.style.cursor = num !== null ? 'pointer' : 'default';
-  updateHoverTooltip(num);
-}
-
-/** 中央球体点击 — 快速求签 */
-function handleOrbClick() {
-  performBlindBox();
-}
-
-/** 中央球体悬停 */
-function handleOrbHover(hovered: boolean) {
-  const tooltip = document.getElementById('hover-tooltip')!;
-  if (hovered) {
-    tooltip.textContent = '🔮 点击求签';
-    tooltip.style.opacity = '1';
-  } else {
-    tooltip.style.opacity = '0';
-  }
-}
-
-/** 悬停提示 */
-function updateHoverTooltip(num: number | null) {
-  const tooltip = document.getElementById('hover-tooltip')!;
+function onHexHover(num: number | null) {
+  canvas.style.cursor = num !== null ? 'pointer' : '';
   if (num !== null) {
     const hex = hexagrams.find((h) => h.number === num);
     if (hex) {
-      tooltip.textContent = `第${num}卦「${hex.name}」`;
-      tooltip.style.opacity = '1';
+      hoverTooltip.textContent = `第 ${num} 卦 · ${hex.name}`;
+      hoverTooltip.classList.add('is-on');
     }
-  } else if (!scene?.checkOrbClick()) {
-    // 如果不是悬停在卦象上，也不是中央球体，则隐藏
-    const orbHovered = document.getElementById('hover-tooltip')!.textContent === '🔮 点击求签';
-    if (!orbHovered) {
-      tooltip.style.opacity = '0';
-    }
+  } else {
+    hoverTooltip.classList.remove('is-on');
   }
 }
 
-/** 屏幕闪烁效果 */
-function triggerScreenFlash() {
-  const flash = document.getElementById('screen-flash')!;
-  flash.style.opacity = '0.3';
-  setTimeout(() => {
-    flash.style.opacity = '0';
-  }, 150);
+function onOrbHover(hovered: boolean) {
+  if (hovered) {
+    hoverTooltip.textContent = '灵枢 · 点击求签';
+    hoverTooltip.classList.add('is-on');
+    canvas.style.cursor = 'pointer';
+  } else {
+    hoverTooltip.classList.remove('is-on');
+    canvas.style.cursor = '';
+  }
 }
 
-// ===== 信息面板更新 =====
-function updateInfoPanel(num: number) {
-  const hex = hexagrams.find((h) => h.number === num);
-  if (!hex) return;
+/* ============================================================
+   详情面板
+   ============================================================ */
+function updatePanel(hex: Hexagram) {
+  panelTitle.textContent = hex.name;
+  hexNumber.textContent = `#${hex.number}`;
+  hexTrigrams.textContent = hex.chinese;
+  hexNature.textContent = hex.nature;
+  hexSymbol.textContent = hex.symbol;
 
-  document.getElementById('panel-title')!.textContent = hex.name + '卦';
-  document.getElementById('hexagram-number')!.textContent = '#' + hex.number;
-  document.getElementById('hexagram-trigrams')!.textContent = hex.chinese;
-  document.getElementById('hexagram-nature')!.textContent = hex.nature;
-  document.getElementById('hexagram-symbol')!.textContent = hex.symbol;
-
-  const linesContainer = document.getElementById('hexagram-lines')!;
-  linesContainer.innerHTML = '';
+  hexLines.innerHTML = '';
   hex.lines.forEach((line) => {
-    const lineEl = document.createElement('div');
-    lineEl.className = 'hex-line ' + (line === 1 ? 'yang' : 'yin');
-    linesContainer.appendChild(lineEl);
+    const el = document.createElement('div');
+    el.className = `hex-line ${line === 1 ? 'yang' : 'yin'}`;
+    hexLines.appendChild(el);
   });
 
-  // 更新 AI 解读
-  updateAiInterpretation(hex);
+  infoPanel.classList.remove('is-closed');
+  syncCollectBtn();
 
-  infoPanel.classList.remove('panel-closed');
-  infoPanelVisible = true;
+  // 先铺内置文本，再异步让 AI 覆盖
+  oracleTexts = fallbackTexts(hex);
+  renderOracleText(true);
+  requestAiTexts(hex);
 }
 
-function updateAiInterpretation(hex: Hexagram) {
-  const aiText = document.getElementById('ai-text')!;
+function closeInfo() {
+  infoPanel.classList.add('is-closed');
+}
 
-  // 始终先显示预设内容（立即可见，无加载状态）
-  aiText.innerHTML = buildInterpretationHTML(
-    hex.interpretation,
-    hex.dataScience,
-    getChildFriendlyExplanation(hex),
-    getLifeAdvice(hex)
-  );
-  bindCollapsibleToggles();
+function closeAllPanels() {
+  closeInfo();
+  analysisPanel.classList.add('is-closed');
+  tutorPanel.classList.add('is-closed');
+}
 
-  // 已配置 API 时，后台生成 AI 内容，完成后静默替换
-  if (isAiConfigured) {
-    generateAiInterpretations(hex).then((interpretations) => {
-      aiText.innerHTML = buildInterpretationHTML(
-        interpretations.traditional,
-        interpretations.dataScience,
-        interpretations.childFriendly,
-        interpretations.lifeAdvice
-      );
-      bindCollapsibleToggles();
-    }).catch(() => {
-      // AI 生成失败时保持预设内容
-    });
+/* ---------- 解读文本渲染 ---------- */
+function renderOracleText(withTypewriter: boolean) {
+  const text = oracleTexts[activeView] || '（暂无内容）';
+  if (typewriterHandle) {
+    cancelAnimationFrame(typewriterHandle);
+    typewriterHandle = 0;
   }
-}
 
-function buildInterpretationHTML(
-  traditional: string,
-  dataScience: string,
-  childFriendly: string,
-  lifeAdvice: string
-): string {
-  const needsCollapse = childFriendly.length > 80;
-  const childSection = needsCollapse
-    ? `<div class="ai-collapsible">
-        <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(childFriendly)}">${escapeHtml(truncateText(childFriendly, 80))}</div>
-        <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
-      </div>`
-    : `<p>${escapeHtml(childFriendly)}</p>`;
+  const html = text.split('\n').filter(Boolean).map((p) => `<p>${escapeHtml(p)}</p>`).join('');
 
-  return `
-    <p class="ai-section-title">🌀 传统解读</p>
-    <p>${traditional}</p>
-    <p class="ai-section-title">📊 数据科学视角</p>
-    <p>${dataScience}</p>
-    <p class="ai-section-title">🌱 通俗解读</p>
-    ${childSection}
-    <p class="ai-section-title">💡 生活启示</p>
-    <p>${lifeAdvice}</p>
-  `;
-}
+  if (!withTypewriter || reducedMotion) {
+    aiText.innerHTML = html;
+    return;
+  }
 
-function bindCollapsibleToggles() {
-  document.querySelectorAll('.ai-collapsible-toggle').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const content = btn.previousElementSibling as HTMLElement;
-      if (!content) return;
-      const isCollapsed = content.classList.contains('collapsed');
-      if (isCollapsed) {
-        content.classList.remove('collapsed');
-        content.style.maxHeight = content.dataset.full!.length * 18 + 'px';
-        btn.classList.add('expanded');
-        btn.textContent = '收起';
-      } else {
-        content.classList.add('collapsed');
-        content.style.maxHeight = '80px';
-        btn.classList.remove('expanded');
-        btn.textContent = '展开';
-      }
-    });
-  });
-}
+  // 打字机：按块揭示，避免逐字卡顿
+  const plain = text.split('\n').filter(Boolean);
+  let idx = 0;
+  aiText.innerHTML = '<p class="is-pending"><span class="type-caret"></span></p>';
 
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
-function truncateText(text: string, maxLen: number): string {
-  if (text.length <= maxLen) return text;
-  return text.slice(0, maxLen) + '…';
-}
-
-async function generateAiInterpretations(hex: Hexagram): Promise<{
-  traditional: string;
-  dataScience: string;
-  childFriendly: string;
-  lifeAdvice: string;
-}> {
-  const config = getApiConfig();
-
-  const prompts = {
-    traditional: `请用中国传统哲学的视角，优雅而深刻地解读第${hex.number}卦「${hex.name}」（${hex.chinese}）。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。性质：${hex.nature}。象征：${hex.symbol}。请从传统哲学角度进行解读，300字以内。`,
-    dataScience: `请从数据科学和现代视角解读第${hex.number}卦「${hex.name}」。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。请用数据分析、模式识别、系统科学等角度进行解读，300字以内。`,
-    childFriendly: `请用6岁小孩能听懂的话解释第${hex.number}卦「${hex.name}」（${hex.chinese}）。${hex.interpretation}请用最简单的比喻和生活例子来解释，200字以内。`,
-    lifeAdvice: `请从第${hex.number}卦「${hex.name}」中提炼出对日常生活有指导意义的启示。卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}。请给出具体、可操作的生活建议，300字以内。`,
-  };
-
-  const results: Record<string, string> = {};
-
-  for (const [key, prompt] of Object.entries(prompts)) {
-    try {
-      const response = await callChatCompletion([
-        { role: 'system', content: '你是一位精通易经、传统中国哲学、数据科学和儿童教育的学者。请用中文回答，风格根据受众调整。' },
-        { role: 'user', content: prompt },
-      ], config);
-      results[key] = response;
-    } catch (err) {
-      results[key] = getDefaultInterpretation(key, hex);
+  const step = () => {
+    idx += 1;
+    const shown = plain.slice(0, idx).map((p) => `<p>${escapeHtml(p)}</p>`).join('');
+    aiText.innerHTML = idx >= plain.length
+      ? shown
+      : shown + '<p class="is-pending"><span class="type-caret"></span></p>';
+    if (idx < plain.length) {
+      typewriterHandle = requestAnimationFrame(() => setTimeout(step, 55));
+    } else {
+      typewriterHandle = 0;
     }
-  }
-
-  return results as any;
-}
-
-function getDefaultInterpretation(type: string, hex: Hexagram): string {
-  switch (type) {
-    case 'traditional': return hex.interpretation;
-    case 'dataScience': return hex.dataScience;
-    case 'childFriendly': return getChildFriendlyExplanation(hex);
-    case 'lifeAdvice': return getLifeAdvice(hex);
-    default: return hex.interpretation;
-  }
-}
-
-function getChildFriendlyExplanation(hex: Hexagram): string {
-  const explanations: Record<number, string> = {
-    1: '天就像一个超级大的爸爸，守护着整个世界。乾卦告诉我们，要像天一样，做一个勇敢、有力量的人！',
-    2: '大地妈妈很温柔，她抱着我们，让我们安全地成长。坤卦告诉我们，做一个温柔、有力量的人。',
-    3: '刚开始学走路的时候，会摔倒，会摔跤。但是不要害怕，慢慢来，一定会学会的！',
-    4: '就像小朋友去上学一样，开始什么都不懂，但是慢慢学习，就会越来越聪明！',
-    5: '有时候我们需要等一等，就像等蛋糕烤好一样。急不得，慢慢来会更好！',
-    6: '有时候会有争吵，但是只要我们心平气和地说话，问题总会解决的。',
   };
-  return explanations[hex.number] || `${hex.name}卦告诉我们${hex.interpretation.substring(0, 50)}……`;
+  step();
 }
 
-function getLifeAdvice(hex: Hexagram): string {
-  const advice: Record<number, string> = {
-    1: '现在正是展现你最好一面的时刻！就像太阳升起，万物都充满希望。',
-    2: '学会倾听和接纳。有时候，最强大的力量不是进攻，而是包容。',
-    3: '新的开始总是有点难，但每一个伟大的故事都从第一步开始。',
-    4: '保持好奇心，多问为什么。学习是一个没有终点的旅程。',
-    5: '耐心等待，好时机正在到来。不要急于求成。',
-    6: '沟通是解决一切问题的钥匙。说话之前先想想对方的感受。',
+/* ---------- AI 生成四维解读 ---------- */
+/**
+ * 防抖入口：连续按方向键翻卦时，不应该每一卦都打四个请求出去。
+ * 停手 360ms 后才真正发起，中途的请求靠 aiGenerationId 作废。
+ */
+function requestAiTexts(hex: Hexagram) {
+  if (!isAiOn) {
+    setStatus('', false);
+    return;
+  }
+  if (aiDebounce) window.clearTimeout(aiDebounce);
+  setStatus('正在通神…', false);
+  aiDebounce = window.setTimeout(() => {
+    void runAiTexts(hex);
+  }, 360);
+}
+
+async function runAiTexts(hex: Hexagram) {
+  const genId = ++aiGenerationId;
+
+  const lineStr = hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，');
+  const base = `第${hex.number}卦「${hex.name}」（${hex.chinese}）。六爻自下而上：${lineStr}。卦性：${hex.nature}。取象：${hex.symbol}。`;
+
+  const sys: ChatMessage = {
+    role: 'system',
+    content:
+      '你是「天机星阵」的解卦者，风格介于阴阳师与东方哲人之间：庄重、有画面感、不装神弄鬼。用简体中文作答，直接给正文，不要标题、不要 markdown 记号、不要复述题目。',
   };
-  return advice[hex.number] || `${hex.name}卦提醒我们：在生活中保持平衡和耐心。`;
+
+  const prompts = [
+    {
+      key: 'classic' as ViewKey,
+      fallback: hex.interpretation,
+      // 提示词只要 180 字，给 1200 tokens 纯属浪费，网关生成时间会成倍拉长
+      maxTokens: 460,
+      messages: [
+        sys,
+        {
+          role: 'user' as const,
+          content: `${base}\n\n请以易学古义解这一卦：讲清卦体结构（上下卦的关系）、象与辞的呼应，以及它在六十四卦序列中的位置。180 字以内。`,
+        },
+      ],
+    },
+    {
+      key: 'modern' as ViewKey,
+      fallback: hex.dataScience,
+      maxTokens: 460,
+      messages: [
+        sys,
+        {
+          role: 'user' as const,
+          content: `${base}\n\n请把这一卦翻译成现代系统语言：用系统状态、反馈回路、能量分布、不确定性这类概念类比它的结构，让人看懂这一卦在讲什么机制。180 字以内。`,
+        },
+      ],
+    },
+    {
+      key: 'plain' as ViewKey,
+      fallback: plainFor(hex),
+      maxTokens: 300,
+      messages: [
+        sys,
+        {
+          role: 'user' as const,
+          content: `${base}\n\n请用大白话讲给一个完全没接触过易经的人，用一个日常场景做比喻（不要用「就像人生一样」这种空话）。120 字以内。`,
+        },
+      ],
+    },
+    {
+      key: 'action' as ViewKey,
+      fallback: actionFor(hex),
+      maxTokens: 420,
+      messages: [
+        sys,
+        {
+          role: 'user' as const,
+          content: `${base}\n\n请给出这一卦对应到当下生活的具体行止建议：该做什么、不该做什么、什么时候动。要可执行，不要空泛。150 字以内。`,
+        },
+      ],
+    },
+  ];
+
+  // 网关可能慢到几十秒，超过 8 秒就告诉用户在等什么，别让人以为卡死了
+  const slowHint = window.setTimeout(() => {
+    if (genId === aiGenerationId) setStatus('网关响应较慢，仍在等待…', false);
+  }, 8000);
+
+  const { results, failed, lastError } = await callMany(prompts, getApiConfig());
+  window.clearTimeout(slowHint);
+  if (genId !== aiGenerationId) return; // 用户已经切走了
+
+  oracleTexts = results as OracleTexts;
+  renderOracleText(true);
+
+  if (failed === 0) {
+    setStatus('本卦解读由 AI 实时生成', true);
+  } else if (failed === prompts.length) {
+    setStatus(`AI 调用失败，已回退内置解读。原因：${lastError}`, false);
+  } else {
+    setStatus(`部分解读由 AI 生成（${prompts.length - failed}/${prompts.length}），其余为内置文本。原因：${lastError}`, false);
+  }
 }
 
-// ===== 标签切换 =====
-function switchTab(tab: 'explore' | 'analysis' | 'ai-tutor') {
+function setStatus(text: string, ok: boolean) {
+  if (!text) {
+    aiStatus.classList.remove('is-on', 'is-ok');
+    aiStatus.textContent = '';
+    return;
+  }
+  aiStatus.textContent = text;
+  aiStatus.classList.add('is-on');
+  aiStatus.classList.toggle('is-ok', ok);
+}
+
+/* ============================================================
+   标签切换
+   ============================================================ */
+function switchTab(tab: typeof currentTab) {
   currentTab = tab;
-  navBtns.forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.tab === tab);
-  });
+  navBtns.forEach((b) => b.classList.toggle('is-active', b.dataset.tab === tab));
 
-  infoPanel.classList.add('panel-closed');
-  analysisPanel.classList.add('panel-closed');
-  tutorPanel.classList.add('panel-closed');
-  infoPanelVisible = false;
+  closeInfo();
+  analysisPanel.classList.add('is-closed');
+  tutorPanel.classList.add('is-closed');
 
   if (tab === 'explore') {
-    infoPanel.classList.remove('panel-closed');
-    infoPanelVisible = true;
+    infoPanel.classList.remove('is-closed');
   } else if (tab === 'analysis') {
-    analysisPanel.classList.remove('panel-closed');
-    drawChart(selectedHexNum);
-  } else if (tab === 'ai-tutor') {
-    tutorPanel.classList.remove('panel-closed');
-    updateAITutor(selectedHexNum);
+    analysisPanel.classList.remove('is-closed');
+    drawCharts(selectedHexNum);
+  } else {
+    tutorPanel.classList.remove('is-closed');
+    const hex = hexagrams.find((h) => h.number === selectedHexNum);
+    if (hex) updateAskCurrent(hex);
   }
 }
 
-// ===== 盲盒求签 =====
-function performBlindBox() {
+/* ============================================================
+   搜索
+   ============================================================ */
+function openSearch() {
+  searchLayer.classList.remove('is-hidden');
+  searchInput.value = '';
+  searchResults.innerHTML = '';
+  searchMatches = [];
+  searchCursor = 0;
+  searchInput.focus();
+}
+
+function closeSearch() {
+  searchLayer.classList.add('is-hidden');
+}
+
+function runSearch() {
+  const q = searchInput.value.trim().toLowerCase();
+  searchResults.innerHTML = '';
+  if (!q) {
+    searchMatches = [];
+    return;
+  }
+
+  searchMatches = hexagrams.filter((h) => {
+    if (String(h.number) === q) return true;
+    if (`#${h.number}` === q) return true;
+    return (
+      h.name.includes(q) ||
+      h.chinese.toLowerCase().includes(q) ||
+      h.nature.includes(q) ||
+      h.symbol.includes(q) ||
+      h.interpretation.includes(q) ||
+      h.trigrams.some((t) => t.includes(q))
+    );
+  }).slice(0, 12);
+
+  searchCursor = 0;
+  searchMatches.forEach((hex, i) => {
+    const btn = document.createElement('button');
+    btn.className = `sr-item${i === 0 ? ' is-cursor' : ''}`;
+    btn.setAttribute('role', 'option');
+    btn.innerHTML = `
+      <span class="sr-num">#${hex.number}</span>
+      <span class="sr-name">${escapeHtml(hex.name)}</span>
+      <span class="sr-meta">${escapeHtml(hex.chinese)} · ${escapeHtml(hex.symbol)}</span>
+      <span class="sr-lines">${hex.lines.map((l) => `<i class="${l === 1 ? '' : 'yin'}"></i>`).join('')}</span>
+    `;
+    btn.addEventListener('click', () => {
+      selectHexagram(hex.number, true);
+      closeSearch();
+    });
+    searchResults.appendChild(btn);
+  });
+}
+
+function onSearchKey(e: KeyboardEvent) {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!searchMatches.length) return;
+    searchCursor = (searchCursor + (e.key === 'ArrowDown' ? 1 : -1) + searchMatches.length) % searchMatches.length;
+    [...searchResults.children].forEach((el, i) => el.classList.toggle('is-cursor', i === searchCursor));
+    (searchResults.children[searchCursor] as HTMLElement)?.scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const hit = searchMatches[searchCursor];
+    if (hit) {
+      selectHexagram(hit.number, true);
+      closeSearch();
+    }
+  }
+}
+
+/* ============================================================
+   求签
+   ============================================================ */
+function rollOracle() {
+  if (!introDone) return;
+
+  // 保底让乾、坤更容易出现，其余均匀
   const roll = Math.random();
   let num: number;
-  if (roll < 0.1) num = 1;
-  else if (roll < 0.2) num = 2;
+  if (roll < 0.08) num = 1;
+  else if (roll < 0.16) num = 2;
   else num = Math.floor(Math.random() * 64) + 1;
 
   blindboxHexNum = num;
-  const hex = hexagrams.find((h) => h.number === num)!;
+  const hex = hexagrams.find((h) => h.number === num);
+  if (!hex) return;
 
-  const cover = document.getElementById('blindbox-cover')!;
-  cover.textContent = '☯';
-  cover.style.animation = 'none';
-  void cover.offsetWidth;
-  cover.style.animation = 'coverShake 0.5s ease-in-out';
+  selectHexagram(num, true);
 
-  document.getElementById('blindbox-result')!.textContent = hex.lines.map((l) => (l === 1 ? '─' : '──')).join('');
-  document.getElementById('blindbox-name')!.textContent = hex.name + '卦';
-  document.getElementById('blindbox-number')!.textContent = '#' + hex.number + ' · ' + hex.chinese;
-  document.getElementById('blindbox-interpretation')!.textContent = hex.interpretation;
+  blindboxCover.classList.remove('is-shaking');
+  void blindboxCover.offsetWidth;
+  blindboxCover.classList.add('is-shaking');
 
-  blindboxModal.classList.add('visible');
+  blindboxName.textContent = `${hex.name}卦`;
+  blindboxNumber.textContent = `第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`;
+  blindboxResult.innerHTML = hex.lines.map((l) => `<i class="${l === 1 ? '' : 'yin'}"></i>`).join('');
+  blindboxInterpretation.textContent = hex.interpretation;
+
+  blindboxModal.classList.add('is-on');
+  flash(0.5);
+  beamPulse();
 }
 
-function hideBlindbox() {
-  blindboxModal.classList.remove('visible');
+function flash(amount: number) {
+  if (reducedMotion) return;
+  screenFlash.style.opacity = String(amount);
+  setTimeout(() => { screenFlash.style.opacity = '0'; }, 140);
 }
 
-// ===== 分享卡片 =====
-function showShareCard() {
-  const num = blindboxHexNum || selectedHexNum;
-  const hex = hexagrams.find((h) => h.number === num)!;
-  document.getElementById('share-card-hex')!.textContent = hex.lines.map((l) => (l === 1 ? '─' : '──')).join('');
-  document.getElementById('share-card-name')!.textContent = hex.name + '卦';
-  document.getElementById('share-card-number')!.textContent = '#' + hex.number + ' · ' + hex.chinese;
-  document.getElementById('share-card-msg')!.textContent = hex.interpretation;
-  shareCard.classList.add('visible');
+function beamPulse() {
+  descentBeam.classList.add('is-on');
+  setTimeout(() => descentBeam.classList.remove('is-on'), 900);
 }
 
-function hideShareCard() {
-  shareCard.classList.remove('visible');
-}
+/* ============================================================
+   结缘（收藏）
+   ============================================================ */
+function toggleBond() {
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex) return;
 
-function downloadShareCard() {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
-  canvas.width = 720;
-  canvas.height = 960;
-
-  const grad = ctx.createLinearGradient(0, 0, 720, 960);
-  grad.addColorStop(0, '#0d0a14');
-  grad.addColorStop(1, '#1a0a14');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 720, 960);
-
-  ctx.strokeStyle = 'rgba(232,197,71,0.3)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(20, 20, 680, 920);
-
-  ctx.strokeStyle = 'rgba(196,30,58,0.5)';
-  ctx.lineWidth = 1;
-  for (let i = 0; i < 4; i++) {
-    const x = i % 2 === 0 ? 30 : 690;
-    const y = i < 2 ? 30 : 930;
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x + (i % 2 === 0 ? 30 : -30), y);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.lineTo(x, y + (i < 2 ? 30 : -30));
-    ctx.stroke();
-  }
-
-  ctx.fillStyle = 'rgba(232,197,71,0.6)';
-  ctx.font = '14px "Noto Sans SC", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('易经 AI 学堂 · 卦象卡片', 360, 60);
-
-  ctx.fillStyle = '#e8c547';
-  ctx.font = '48px "Noto Serif SC", serif';
-  ctx.fillText(document.getElementById('share-card-hex')!.textContent || '', 360, 180);
-
-  ctx.fillStyle = '#e8c547';
-  ctx.font = 'bold 28px "Noto Serif SC", serif';
-  ctx.fillText(document.getElementById('share-card-name')!.textContent || '', 360, 230);
-
-  ctx.fillStyle = '#7a6a5a';
-  ctx.font = '12px "Noto Sans SC", sans-serif';
-  ctx.fillText(document.getElementById('share-card-number')!.textContent || '', 360, 260);
-
-  const msg = document.getElementById('share-card-msg')!.textContent || '';
-  ctx.fillStyle = '#c8b89a';
-  ctx.font = '14px "Noto Sans SC", sans-serif';
-  const lines = wrapText(ctx, msg, 580);
-  let y = 320;
-  lines.forEach((line) => {
-    ctx.fillText(line, 360, y);
-    y += 24;
-  });
-
-  ctx.fillStyle = 'rgba(122,106,90,0.5)';
-  ctx.font = '10px "Noto Sans SC", sans-serif';
-  ctx.fillText('扫码或截图分享 · 易经 AI 学堂', 360, 900);
-
-  const shareNum = blindboxHexNum || selectedHexNum;
-  const shareHex = hexagrams.find((h) => h.number === shareNum);
-  const link = document.createElement('a');
-  link.download = `iching-${shareHex?.name || 'hex'}.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
-
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
-  const lines: string[] = [];
-  let currentLine = '';
-  for (const char of text) {
-    const testLine = currentLine + char;
-    const metrics = ctx.measureText(testLine);
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = char;
-    } else {
-      currentLine = testLine;
-    }
-  }
-  if (currentLine) lines.push(currentLine);
-  return lines;
-}
-
-// ===== 收藏系统 =====
-function collectCurrentHexagram() {
-  if (collectedHexagrams.has(selectedHexNum)) {
-    collectedHexagrams.delete(selectedHexNum);
-    showToast('已取消收藏');
+  if (bonded.has(selectedHexNum)) {
+    bonded.delete(selectedHexNum);
+    showToast(`已解缘 ${hex.name}卦`);
   } else {
-    collectedHexagrams.add(selectedHexNum);
-    showToast('已收藏 ' + hexagrams.find((h) => h.number === selectedHexNum)?.name + '卦');
+    bonded.add(selectedHexNum);
+    showToast(`与 ${hex.name}卦 结缘`);
   }
-  localStorage.setItem('iching_collected', JSON.stringify([...collectedHexagrams]));
-  renderCollectionBar();
-  hideBlindbox();
+
+  try {
+    localStorage.setItem('iching_bonded', JSON.stringify([...bonded]));
+  } catch { /* 存不进去就算了 */ }
+
+  renderBondBar();
+  syncCollectBtn();
 }
 
-function renderCollectionBar() {
-  if (!collectionBar) return;
+function renderBondBar() {
   collectionBar.innerHTML = '';
-  const recent = [...collectedHexagrams].slice(-12);
-  recent.forEach((num) => {
-    const hex = hexagrams.find((h) => h.number === num)!;
-    const dot = document.createElement('div');
-    dot.className = 'collection-dot collected';
+  [...bonded].slice(-14).forEach((num) => {
+    const hex = hexagrams.find((h) => h.number === num);
+    if (!hex) return;
+    const dot = document.createElement('button');
+    dot.className = 'bond-dot';
     dot.textContent = hex.name;
-    dot.title = hex.name + '卦';
-    dot.addEventListener('click', () => handleHexagramSelect(num));
+    dot.title = `第 ${num} 卦 ${hex.name}卦`;
+    dot.setAttribute('aria-label', `跳到第 ${num} 卦 ${hex.name}卦`);
+    dot.addEventListener('click', () => selectHexagram(num, true));
     collectionBar.appendChild(dot);
   });
 }
 
-// ===== 数据分析图表 =====
-function drawChart(hexNum: number) {
-  const chartCanvas = document.getElementById('chart-canvas') as HTMLCanvasElement;
-  if (!chartCanvas) return;
+function syncCollectBtn() {
+  const btn = $('collect-btn');
+  const isBonded = bonded.has(selectedHexNum);
+  btn.innerHTML = `<span class="act-ico">${isBonded ? '解' : '缘'}</span>${isBonded ? '解开此缘' : '结缘收藏'}`;
+}
 
-  const ctx = chartCanvas.getContext('2d');
-  if (!ctx) return;
+/* ============================================================
+   图表：阳爻分布 + 六爻能量
+   ============================================================ */
+function drawCharts(num: number) {
+  drawHistogram(num);
+  drawRadar(num);
+}
 
-  const rect = chartCanvas.parentElement!.getBoundingClientRect();
-  chartCanvas.width = rect.width * window.devicePixelRatio;
-  chartCanvas.height = rect.height * window.devicePixelRatio;
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+function fitCanvas(cv: HTMLCanvasElement) {
+  const rect = cv.parentElement!.getBoundingClientRect();
+  const dpr = Math.min(window.devicePixelRatio, 2);
+  cv.width = Math.max(1, Math.round(rect.width * dpr));
+  cv.height = Math.max(1, Math.round(rect.height * dpr));
+  const ctx = cv.getContext('2d')!;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { ctx, w: rect.width, h: rect.height };
+}
 
-  const w = rect.width;
-  const h = rect.height;
-  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
-  const chartW = w - padding.left - padding.right;
-  const chartH = h - padding.top - padding.bottom;
-
+function drawHistogram(num: number) {
+  const cv = document.getElementById('chart-canvas') as HTMLCanvasElement | null;
+  if (!cv) return;
+  const { ctx, w, h } = fitCanvas(cv);
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = 'rgba(0,0,0,0.2)';
-  ctx.fillRect(0, 0, w, h);
 
   const stats = generateHexagramStats();
-  const hex = hexagrams.find((h) => h.number === hexNum);
+  const hex = hexagrams.find((x) => x.number === num);
   if (!hex) return;
 
-  const yangCount = stats.yangCounts[hexNum - 1];
-  const yinCount = 6 - yangCount;
-
+  const yangCount = hex.lines.reduce((a: number, l) => a + l, 0);
   const bins = [0, 1, 2, 3, 4, 5, 6];
-  const binCounts = new Array(7).fill(0);
-  stats.yangCounts.forEach((c) => binCounts[c]++);
+  const counts = new Array(7).fill(0);
+  stats.yangCounts.forEach((c: number) => { counts[c] += 1; });
+  const maxCount = Math.max(...counts);
 
-  const barWidth = chartW / bins.length - 4;
-  const maxCount = Math.max(...binCounts);
+  const pad = { top: 18, right: 14, bottom: 30, left: 30 };
+  const cw = w - pad.left - pad.right;
+  const ch = h - pad.top - pad.bottom;
 
-  ctx.strokeStyle = 'rgba(196,30,58,0.2)';
+  // 基线
+  ctx.strokeStyle = 'rgba(240,200,105,0.18)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(padding.left, padding.top);
-  ctx.lineTo(padding.left, h - padding.bottom);
-  ctx.lineTo(w - padding.right, h - padding.bottom);
+  ctx.moveTo(pad.left, pad.top);
+  ctx.lineTo(pad.left, pad.top + ch);
+  ctx.lineTo(pad.left + cw, pad.top + ch);
   ctx.stroke();
 
-  ctx.fillStyle = '#7a6a5a';
-  ctx.font = '10px "Noto Sans SC", sans-serif';
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= maxCount; i++) {
-    const y = h - padding.bottom - (i / maxCount) * chartH;
-    ctx.fillText(i.toString(), padding.left - 8, y + 3);
-    ctx.beginPath();
-    ctx.strokeStyle = 'rgba(196,30,58,0.08)';
-    ctx.moveTo(padding.left, y);
-    ctx.lineTo(w - padding.right, y);
-    ctx.stroke();
-  }
+  const slot = cw / bins.length;
+  const barW = slot * 0.52;
 
   bins.forEach((bin, i) => {
-    const x = padding.left + i * (chartW / bins.length) + 2;
-    const barH = (binCounts[bin] / maxCount) * chartH;
-    const y = h - padding.bottom - barH;
-
+    const value = counts[bin];
+    const bh = maxCount ? (value / maxCount) * ch : 0;
+    const x = pad.left + i * slot + (slot - barW) / 2;
+    const y = pad.top + ch - bh;
     const isCurrent = bin === yangCount;
-    const gradient = ctx.createLinearGradient(x, y, x, h - padding.bottom);
+
+    const grad = ctx.createLinearGradient(x, y, x, pad.top + ch);
     if (isCurrent) {
-      gradient.addColorStop(0, '#c41e3a');
-      gradient.addColorStop(1, 'rgba(196,30,58,0.2)');
+      grad.addColorStop(0, '#f0c869');
+      grad.addColorStop(1, 'rgba(232,56,79,0.5)');
     } else {
-      gradient.addColorStop(0, 'rgba(196,30,58,0.5)');
-      gradient.addColorStop(1, 'rgba(196,30,58,0.05)');
+      grad.addColorStop(0, 'rgba(169,127,232,0.7)');
+      grad.addColorStop(1, 'rgba(169,127,232,0.08)');
+    }
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, barW, Math.max(bh, 1));
+
+    if (isCurrent) {
+      ctx.strokeStyle = '#ffe9a8';
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(x - 0.5, y - 0.5, barW + 1, bh + 1);
     }
 
-    ctx.fillStyle = gradient;
-    ctx.fillRect(x, y, barWidth, barH);
-
-    ctx.fillStyle = isCurrent ? '#e8c547' : '#7a6a5a';
-    ctx.font = isCurrent ? 'bold 11px "Noto Sans SC", sans-serif' : '10px "Noto Sans SC", sans-serif';
+    ctx.fillStyle = isCurrent ? '#ffe9a8' : 'rgba(139,135,121,0.9)';
+    ctx.font = isCurrent ? '700 11px "Zen Maru Gothic", sans-serif' : '11px "Zen Maru Gothic", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(`阳${bin}`, x + barWidth / 2, h - padding.bottom + 16);
+    ctx.fillText(`${bin}`, x + barW / 2, pad.top + ch + 18);
+
+    ctx.fillStyle = isCurrent ? '#ffe9a8' : 'rgba(139,135,121,0.75)';
+    ctx.font = '10px "Zen Maru Gothic", sans-serif';
+    ctx.fillText(String(value), x + barW / 2, y - 5);
   });
 
-  ctx.fillStyle = '#f5efe6';
-  ctx.font = 'bold 12px "Noto Serif SC", serif';
-  ctx.textAlign = 'center';
-  ctx.fillText(`第${hexNum}卦「${hex.name}」阳爻分布`, w / 2, 14);
+  ctx.fillStyle = 'rgba(139,135,121,0.9)';
+  ctx.font = '10px "Zen Maru Gothic", sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('阳爻个数', pad.left, 11);
 
-  const chartInfo = document.getElementById('chart-info')!;
+  const rank = bins.filter((b) => b > yangCount).reduce((acc, b) => acc + counts[b], 0) + 1;
+
   chartInfo.innerHTML = `
-    <p>第${hexNum}卦「${hex.name}」含 <strong style="color:#e8c547">${yangCount}</strong> 个阳爻，<strong style="color:#7a5aaa">${yinCount}</strong> 个阴爻</p>
-    <p>卦值（二进制）: ${hex.lines.map((l) => l.toString()).join('')} → 十进制 ${hex.lines.reduce((a: number, l: number) => a + l, 0)}</p>
-    <p>在64卦中阳爻数量排名: 第${binCounts[yangCount]}位（共有${binCounts[yangCount]}卦含${yangCount}个阳爻）</p>
+    <p><span class="k">结构</span> 第 <b>${num}</b> 卦「${hex.name}」含 <b>${yangCount}</b> 阳爻、<b>${6 - yangCount}</b> 阴爻</p>
+    <p><span class="k">卦值</span> 自下而上 ${hex.lines.map((l) => (l === 1 ? '1' : '0')).join('')}，十进制 <b>${hex.lines.reduce((a: number, l, i) => a + (l << i), 0)}</b></p>
+    <p><span class="k">分布</span> 全阵 ${counts[yangCount]} 卦同为 ${yangCount} 阳，本卦按阳爻数排第 <b>${rank}</b> 位</p>
+    <p><span class="k">对照</span> 六十四卦平均阳爻数 <b>${stats.avgYang.toFixed(2)}</b>，本卦${yangCount > stats.avgYang ? '高于' : yangCount < stats.avgYang ? '低于' : '持平'}</p>
   `;
 }
 
-// ===== AI 导师 =====
-/** 更新卡片生成器占位符（显示当前卦象） */
-function updateAITutor(hexNum: number) {
-  const hex = hexagrams.find((h) => h.number === hexNum);
+function drawRadar(num: number) {
+  const cv = document.getElementById('radar-canvas') as HTMLCanvasElement | null;
+  if (!cv) return;
+  const { ctx, w, h } = fitCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+
+  const hex = hexagrams.find((x) => x.number === num);
   if (!hex) return;
 
-  const container = document.getElementById('ai-card-container')!;
-  const placeholder = container.querySelector('.ai-card-placeholder');
-  if (placeholder) {
-    placeholder.innerHTML = `
-      <span class="placeholder-icon">🎴</span>
-      <p>当前卦象：第${hexNum}卦「${hex.name}」</p>
-      <p style="margin-top:4px;opacity:0.6;">输入你的问题，生成专属解读卡片</p>
-    `;
+  const cx = w / 2;
+  const cy = h / 2;
+  const R = Math.min(w, h) / 2 - 34;
+  const N = 6;
+  const labels = ['初', '二', '三', '四', '五', '上'];
+
+  // 网格：同心六边形
+  for (let ring = 1; ring <= 4; ring++) {
+    const r = (R * ring) / 4;
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = `rgba(169,127,232,${0.1 + ring * 0.045})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
+
+  // 辐条
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    ctx.strokeStyle = 'rgba(240,200,105,0.14)';
+    ctx.stroke();
+  }
+
+  // 全阵均值参考（每爻位置的阳爻比例）
+  const avgRatio: number[] = [];
+  for (let pos = 0; pos < N; pos++) {
+    const ones = hexagrams.reduce((acc: number, x) => acc + x.lines[pos], 0);
+    avgRatio.push(ones / hexagrams.length);
+  }
+
+  const polyFor = (vals: number[], stroke: string, fill: string) => {
+    ctx.beginPath();
+    vals.forEach((v, i) => {
+      const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+      const r = R * Math.max(0.06, v);
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+  };
+
+  // 均值虚线层
+  ctx.setLineDash([4, 4]);
+  polyFor(avgRatio, 'rgba(94,234,212,0.55)', 'rgba(94,234,212,0.06)');
+  ctx.setLineDash([]);
+
+  // 本卦层
+  const vals = hex.lines.map((l) => (l === 1 ? 1 : 0.42));
+  polyFor(vals, 'rgba(240,200,105,0.95)', 'rgba(240,200,105,0.16)');
+
+  // 顶点标记
+  vals.forEach((v, i) => {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const r = R * v;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    ctx.beginPath();
+    ctx.arc(x, y, 3.6, 0, Math.PI * 2);
+    ctx.fillStyle = hex.lines[i] === 1 ? '#ffe9a8' : '#a97fe8';
+    ctx.fill();
+  });
+
+  // 轴标签
+  ctx.font = '600 11px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  labels.forEach((label, i) => {
+    const a = (i / N) * Math.PI * 2 - Math.PI / 2;
+    const x = cx + Math.cos(a) * (R + 20);
+    const y = cy + Math.sin(a) * (R + 20);
+    ctx.fillStyle = hex.lines[i] === 1 ? 'rgba(255,233,168,0.95)' : 'rgba(169,127,232,0.9)';
+    ctx.fillText(`${label}${hex.lines[i] === 1 ? '阳' : '阴'}`, x, y);
+  });
+
+  const yang = hex.lines.reduce((a: number, l) => a + l, 0);
+  const strongest = hex.lines.reduce((best: number, l, i) => (l === 1 && avgRatio[i] < avgRatio[best] ? i : best), 0);
+  radarCaption.textContent =
+    `金色为本卦（阳爻满格、阴爻收至 42%），青色虚线是全阵六十四卦在各爻位的平均阳爻比例。` +
+    `本卦 ${yang} 阳 ${6 - yang} 阴；第 ${strongest + 1} 爻（${labels[strongest]}爻）是全阵最罕见的阳位，这一爻的分量比别处重。`;
 }
 
-/** 生成 AI 卦象解读卡片 */
-async function generateAiCard() {
-  const questionInput = document.getElementById('question-input') as HTMLTextAreaElement;
+/* ============================================================
+   神谕问卜
+   ============================================================ */
+function buildAskChips() {
+  const samples = [
+    '这次转岗该不该去？',
+    '手里的项目还要不要继续投入？',
+    '和这个人的关系会怎么走？',
+    '现在适合开始新的事情吗？',
+    '近期最该提防什么？',
+  ];
+  samples.forEach((text) => {
+    const chip = document.createElement('button');
+    chip.className = 'chip';
+    chip.textContent = text;
+    chip.addEventListener('click', () => {
+      questionInput.value = text;
+      questionInput.focus();
+    });
+    askChips.appendChild(chip);
+  });
+}
+
+function updateAskCurrent(hex: Hexagram) {
+  askCurrent.innerHTML = `
+    <b>${escapeHtml(hex.name)}卦</b>
+    <span>第 ${hex.number} 卦 · ${escapeHtml(hex.chinese)}</span>
+    <span class="ac-lines">${hex.lines.map((l) => `<i class="${l === 1 ? '' : 'yin'}"></i>`).join('')}</span>
+  `;
+}
+
+async function generateAnswer() {
   const question = questionInput.value.trim();
   if (!question) {
-    showToast('请输入你的问题');
+    showToast('先写下你要问的事');
+    questionInput.focus();
     return;
   }
 
   const hex = hexagrams.find((h) => h.number === selectedHexNum);
   if (!hex) return;
 
-  const generateBtn = document.getElementById('generate-btn') as HTMLButtonElement;
-  const container = document.getElementById('ai-card-container')!;
-  const cardActions = document.getElementById('card-actions')!;
-
-  // 显示加载状态
-  generateBtn.disabled = true;
-  generateBtn.innerHTML = '<span>⏳ 生成中…</span>';
-  container.innerHTML = `
-    <div class="ai-card-placeholder">
-      <span class="placeholder-icon">🔮</span>
-      <p>AI 正在解读「${hex.name}」…</p>
-    </div>
-  `;
-  cardActions.style.display = 'none';
-
   const config = getApiConfig();
-  let interpretation = '';
-  let apiError: string | null = null;
 
-  console.log('[生成卡片] API 配置状态:', {
-    hasKey: !!config.apiKey,
-    baseUrl: config.baseUrl,
-    modelId: config.modelId,
-  });
+  if (!config.apiKey) {
+    renderAnswerCard(hex, question, `${hex.interpretation}\n\n就你问的这件事，${hex.name}卦的意思偏向「${hex.symbol}」。先按这个方向想一想，接通 AI 后能得到更贴合你处境的一段话。`, '未接通神谕，当前是内置文本。点右上角「AI」填入接口即可实时生成。');
+    cardActions.hidden = false;
+    return;
+  }
 
-  if (config.apiKey) {
-    try {
-      interpretation = await callChatCompletion([
+  generateBtn.disabled = true;
+  generateBtn.innerHTML = '<span class="act-ico">卜</span>起卦中…';
+  cardContainer.innerHTML = '<div class="card-placeholder"><div class="skeleton"><div class="sk-line"></div><div class="sk-line"></div><div class="sk-line"></div><div class="sk-line"></div></div></div>';
+  cardActions.hidden = true;
+
+  try {
+    const text = await callChatCompletion(
+      [
         {
           role: 'system',
-          content: '你是一位精通易经的学者。用户会给出一个问题和一个卦象，请用易经的哲学体系解读这个问题与卦象的关联。风格典雅而富有洞察力，200字以内，用中文回答。',
+          content:
+            '你是「天机星阵」的解卦者，兼有阴阳师的仪式感与咨询师的务实。你会把卦象结构对应到提问者的具体处境上，给判断也给理由。简体中文，直接给正文，不要标题与 markdown 记号，220 字以内。',
         },
         {
           role: 'user',
-          content: `问题：${question}\n\n卦象：第${hex.number}卦「${hex.name}」（${hex.chinese}）\n卦象结构：${hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，')}\n性质：${hex.nature}\n象征：${hex.symbol}\n\n请结合这个问题和卦象，给出深刻的解读。`,
+          content:
+            `所问：${question}\n\n卦象：第${hex.number}卦「${hex.name}」（${hex.chinese}）\n` +
+            `六爻自下而上：${hex.lines.map((l) => (l === 1 ? '阳' : '阴')).join('')}\n` +
+            `卦性：${hex.nature}｜取象：${hex.symbol}\n` +
+            `古义参考：${hex.interpretation}\n\n` +
+            `请结合所问，指出这一卦在讲什么处境、当事人在其中处于哪一步、接下来宜与不宜。`,
         },
-      ], config);
-    } catch (err: any) {
-      // AI 失败时显示错误信息
-      console.error('[生成卡片] API 调用失败:', err);
-      apiError = err.message || '未知错误';
-      interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
-    }
-  } else {
-    console.warn('[生成卡片] 未配置 API Key');
-    interpretation = `${hex.interpretation}\n\n关于「${question}」，${hex.name}卦暗示：${getLifeAdvice(hex)}`;
+      ],
+      config,
+      520
+    );
+    renderAnswerCard(hex, question, text, '');
+  } catch (err) {
+    renderAnswerCard(
+      hex,
+      question,
+      `${hex.interpretation}\n\n就你问的这件事，${hex.name}卦的意思偏向「${hex.symbol}」。`,
+      `AI 调用失败：${(err as Error)?.message || '未知错误'}`
+    );
+  } finally {
+    generateBtn.disabled = false;
+    generateBtn.innerHTML = '<span class="act-ico">卜</span>起 卦 问 神';
   }
+}
 
-  // 渲染卡片
-  const errorHtml = apiError
-    ? `<div class="ai-card-error">⚠️ AI 调用失败：${escapeHtml(apiError)}<br/>当前显示预设解读</div>`
-    : '';
+function renderAnswerCard(hex: Hexagram, question: string, body: string, errorText: string) {
+  const now = new Date();
+  const stamp = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 
-  container.innerHTML = `
-    <div class="ai-card">
-      <div class="ai-card-hex">${hex.lines.map((l) => (l === 1 ? '─' : '──')).join('')}</div>
-      <div class="ai-card-name">${hex.name}卦</div>
-      <div class="ai-card-number">#${hex.number} · ${hex.chinese} · ${hex.nature}</div>
-      <div class="ai-card-question">「${escapeHtml(question)}」</div>
-      ${errorHtml}
-      <div class="ai-card-interpretation">${escapeHtml(interpretation)}</div>
-      <div class="ai-card-footer">易经 AI 学堂 · 专属解读</div>
+  cardContainer.innerHTML = `
+    <div class="answer-card">
+      <div class="ac-top">
+        <span class="ac-hex">${hex.lines.map((l) => `<i class="${l === 1 ? '' : 'yin'}"></i>`).join('')}</span>
+        <div>
+          <div class="ac-name">${escapeHtml(hex.name)}卦</div>
+          <div class="ac-sub">第 ${hex.number} 卦 · ${escapeHtml(hex.chinese)} · ${escapeHtml(hex.nature)}</div>
+        </div>
+      </div>
+      <div class="ac-q">「${escapeHtml(question)}」</div>
+      ${errorText ? `<div class="ac-err">${escapeHtml(errorText)}</div>` : ''}
+      <div class="ac-body">${escapeHtml(body).replace(/\n/g, '<br/>')}</div>
+      <div class="ac-foot"><span>天机星阵 · 专属解签</span><span>${stamp}</span></div>
     </div>
   `;
-
-  // 显示操作按钮
-  cardActions.style.display = 'flex';
-
-  // 恢复按钮
-  generateBtn.disabled = false;
-  generateBtn.innerHTML = '<span>✨ 生成解读</span>';
+  cardActions.hidden = false;
 }
 
-/** 下载 AI 卡片为 PNG */
-function downloadAiCard() {
-  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+/* ============================================================
+   分享符卡
+   ============================================================ */
+function openShareCard() {
+  const num = blindboxHexNum ?? selectedHexNum;
+  const hex = hexagrams.find((h) => h.number === num);
   if (!hex) return;
+  drawShareCard(hex, oracleTexts.classic || hex.interpretation);
+  shareCard.classList.add('is-on');
+}
 
-  const question = (document.getElementById('question-input') as HTMLTextAreaElement).value.trim();
-  const interpretationEl = document.querySelector('.ai-card-interpretation');
-  const interpretation = interpretationEl ? interpretationEl.textContent : hex.interpretation;
+function drawShareCard(hex: Hexagram, text: string) {
+  const W = 720;
+  const H = 960;
+  shareCanvas.width = W;
+  shareCanvas.height = H;
+  const ctx = shareCanvas.getContext('2d')!;
 
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d')!;
-  canvas.width = 720;
-  canvas.height = 960;
+  // 底
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#070b18');
+  bg.addColorStop(0.5, '#0d142b');
+  bg.addColorStop(1, '#1a0f22');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
 
-  // 背景
-  const grad = ctx.createLinearGradient(0, 0, 720, 960);
-  grad.addColorStop(0, '#0d0a14');
-  grad.addColorStop(1, '#1a0a14');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 720, 960);
+  // 径向光
+  const glow = ctx.createRadialGradient(W / 2, 300, 20, W / 2, 300, 460);
+  glow.addColorStop(0, 'rgba(232,56,79,0.28)');
+  glow.addColorStop(1, 'rgba(232,56,79,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
 
-  // 边框
-  ctx.strokeStyle = 'rgba(232,197,71,0.3)';
+  // 双框
+  ctx.strokeStyle = 'rgba(240,200,105,0.5)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(20, 20, 680, 920);
+  ctx.strokeRect(26, 26, W - 52, H - 52);
+  ctx.strokeStyle = 'rgba(240,200,105,0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(38, 38, W - 76, H - 76);
 
-  // 标题
-  ctx.fillStyle = 'rgba(232,197,71,0.6)';
-  ctx.font = '14px "Noto Sans SC", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('易经 AI 学堂 · 专属解读', 360, 60);
-
-  // 卦象
-  ctx.fillStyle = '#e8c547';
-  ctx.font = '48px "Noto Serif SC", serif';
-  ctx.fillText(hex.lines.map((l) => (l === 1 ? '─' : '──')).join(''), 360, 160);
-
-  // 名称
-  ctx.fillStyle = '#e8c547';
-  ctx.font = 'bold 32px "Noto Serif SC", serif';
-  ctx.fillText(`${hex.name}卦`, 360, 220);
-
-  // 编号
-  ctx.fillStyle = '#7a6a5a';
-  ctx.font = '12px "Noto Sans SC", sans-serif';
-  ctx.fillText(`#${hex.number} · ${hex.chinese} · ${hex.nature}`, 360, 250);
-
-  // 问题
-  if (question) {
-    ctx.fillStyle = '#c41e3a';
-    ctx.font = 'italic 16px "Noto Sans SC", sans-serif';
-    ctx.fillText(`「${question}」`, 360, 300);
-  }
-
-  // 解读内容
-  ctx.fillStyle = '#c8b89a';
-  ctx.font = '14px "Noto Sans SC", sans-serif';
-  const lines = wrapText(ctx, interpretation, 580);
-  let y = 360;
-  lines.forEach((line) => {
-    ctx.fillText(line, 360, y);
-    y += 24;
+  // 四角金饰
+  ctx.strokeStyle = 'rgba(240,200,105,0.9)';
+  ctx.lineWidth = 3;
+  const corners: Array<[number, number, number, number]> = [
+    [46, 46, 1, 1], [W - 46, 46, -1, 1],
+    [46, H - 46, 1, -1], [W - 46, H - 46, -1, -1],
+  ];
+  corners.forEach(([x, y, dx, dy]) => {
+    ctx.beginPath();
+    ctx.moveTo(x + dx * 34, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + dy * 34);
+    ctx.stroke();
   });
 
-  // 底部
-  ctx.fillStyle = 'rgba(122,106,90,0.5)';
-  ctx.font = '10px "Noto Sans SC", sans-serif';
-  ctx.fillText('扫码或截图分享 · 易经 AI 学堂', 360, 900);
+  // 顶部标题
+  ctx.fillStyle = 'rgba(240,200,105,0.72)';
+  ctx.font = '500 15px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('天 机 星 阵 · 卦 象 符 卡', W / 2, 76);
 
-  const link = document.createElement('a');
-  link.download = `iching-${hex.name}-card.png`;
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  // 卦名
+  ctx.save();
+  ctx.shadowColor = 'rgba(240,200,105,0.55)';
+  ctx.shadowBlur = 28;
+  ctx.fillStyle = '#ffe9a8';
+  ctx.font = '800 86px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText(hex.name, W / 2, 178);
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(139,135,121,0.95)';
+  ctx.font = '500 16px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText(`第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`, W / 2, 236);
+
+  // 六爻
+  const barW = 210;
+  const barH = 17;
+  const gap = 14;
+  let y = 292;
+  for (let i = hex.lines.length - 1; i >= 0; i--) {
+    const line = hex.lines[i];
+    const x0 = (W - barW) / 2;
+    if (line === 1) {
+      const grad = ctx.createLinearGradient(x0, y, x0 + barW, y);
+      grad.addColorStop(0, '#b98c2c');
+      grad.addColorStop(0.5, '#ffe9a8');
+      grad.addColorStop(1, '#b98c2c');
+      ctx.fillStyle = grad;
+      roundRectPath(ctx, x0, y, barW, barH, 4);
+      ctx.fill();
+    } else {
+      const half = (barW - 26) / 2;
+      ctx.fillStyle = '#a97fe8';
+      roundRectPath(ctx, x0, y, half, barH, 4);
+      ctx.fill();
+      roundRectPath(ctx, x0 + half + 26, y, half, barH, 4);
+      ctx.fill();
+    }
+    y += barH + gap;
+  }
+
+  // 分隔
+  ctx.strokeStyle = 'rgba(240,200,105,0.22)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(96, y + 12);
+  ctx.lineTo(W - 96, y + 12);
+  ctx.stroke();
+
+  // 正文
+  ctx.fillStyle = 'rgba(205,198,184,0.96)';
+  ctx.font = '400 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'left';
+  const lines = wrapText(ctx, text, W - 176);
+  let ty = y + 50;
+  const maxY = H - 132;
+  for (const line of lines) {
+    if (ty > maxY) {
+      ctx.fillText('……', 88, ty);
+      break;
+    }
+    ctx.fillText(line, 88, ty);
+    ty += 31;
+  }
+
+  // 页脚
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(139,135,121,0.8)';
+  ctx.font = '500 14px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText('结印求签 · 天机星阵', W / 2, H - 74);
+
+  // 朱印
+  ctx.fillStyle = 'rgba(163,18,42,0.92)';
+  roundRectPath(ctx, W / 2 - 26, H - 56, 52, 52, 7);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(246,239,224,0.95)';
+  ctx.font = '700 28px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('易', W / 2, H - 29);
 }
 
-/** 分享 AI 卡片 */
-function shareAiCard() {
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number, w: number, h: number, r: number
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const out: string[] = [];
+  let line = '';
+  for (const ch of text.replace(/\n/g, '')) {
+    const test = line + ch;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      out.push(line);
+      line = ch;
+    } else {
+      line = test;
+    }
+  }
+  if (line) out.push(line);
+  return out;
+}
+
+function downloadShareCard() {
+  const num = blindboxHexNum ?? selectedHexNum;
+  const hex = hexagrams.find((h) => h.number === num);
+  const link = document.createElement('a');
+  link.download = `天机星阵-${hex?.name ?? 'hex'}.png`;
+  link.href = shareCanvas.toDataURL('image/png');
+  link.click();
+  showToast('符卡已保存');
+}
+
+function downloadAnswerCard() {
   const hex = hexagrams.find((h) => h.number === selectedHexNum);
   if (!hex) return;
+  const body = cardContainer.querySelector('.ac-body')?.textContent ?? hex.interpretation;
+  const tmp = document.createElement('canvas');
+  tmp.width = 720;
+  tmp.height = 960;
+  const prev = shareCanvas;
+  void prev;
+  drawShareCardTo(tmp, hex, body);
+  const link = document.createElement('a');
+  link.download = `天机星阵-${hex.name}-解签.png`;
+  link.href = tmp.toDataURL('image/png');
+  link.click();
+  showToast('解签已保存');
+}
 
-  const question = (document.getElementById('question-input') as HTMLTextAreaElement).value.trim();
-  const interpretationEl = document.querySelector('.ai-card-interpretation');
-  const interpretation = interpretationEl ? interpretationEl.textContent : hex.interpretation;
+/** 与 drawShareCard 同版式，但画到任意 canvas（用于下载解签） */
+function drawShareCardTo(target: HTMLCanvasElement, hex: Hexagram, text: string) {
+  const backup = shareCanvas;
+  const realGet = target.getContext.bind(target);
+  void realGet;
+  // 复用同一套绘制逻辑：临时把 shareCanvas 指过去
+  const original = (window as unknown as { __sc?: HTMLCanvasElement }).__sc;
+  (window as unknown as { __sc?: HTMLCanvasElement }).__sc = backup;
+  const ctx = target.getContext('2d')!;
+  // 直接重画：为避免重复代码，这里调用一个共享实现
+  paintCard(ctx, target.width, target.height, hex, text);
+  void original;
+}
 
-  const text = `🔮 易经 AI 学堂\n${hex.name}卦（第${hex.number}卦）\n问题：${question}\n解读：${interpretation}`;
+function paintCard(ctx: CanvasRenderingContext2D, W: number, H: number, hex: Hexagram, text: string) {
+  const bg = ctx.createLinearGradient(0, 0, W, H);
+  bg.addColorStop(0, '#070b18');
+  bg.addColorStop(0.5, '#0d142b');
+  bg.addColorStop(1, '#1a0f22');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, W, H);
+
+  const glow = ctx.createRadialGradient(W / 2, 300, 20, W / 2, 300, 460);
+  glow.addColorStop(0, 'rgba(232,56,79,0.28)');
+  glow.addColorStop(1, 'rgba(232,56,79,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.strokeStyle = 'rgba(240,200,105,0.5)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(26, 26, W - 52, H - 52);
+  ctx.strokeStyle = 'rgba(240,200,105,0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(38, 38, W - 76, H - 76);
+
+  ctx.fillStyle = 'rgba(240,200,105,0.72)';
+  ctx.font = '500 15px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('天 机 星 阵 · 专 属 解 签', W / 2, 76);
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(240,200,105,0.55)';
+  ctx.shadowBlur = 28;
+  ctx.fillStyle = '#ffe9a8';
+  ctx.font = '800 86px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText(hex.name, W / 2, 178);
+  ctx.restore();
+
+  ctx.fillStyle = 'rgba(139,135,121,0.95)';
+  ctx.font = '500 16px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText(`第 ${hex.number} 卦 · ${hex.chinese} · ${hex.nature}`, W / 2, 236);
+
+  const barW = 210;
+  const barH = 17;
+  const gap = 14;
+  let y = 292;
+  for (let i = hex.lines.length - 1; i >= 0; i--) {
+    const line = hex.lines[i];
+    const x0 = (W - barW) / 2;
+    if (line === 1) {
+      const grad = ctx.createLinearGradient(x0, y, x0 + barW, y);
+      grad.addColorStop(0, '#b98c2c');
+      grad.addColorStop(0.5, '#ffe9a8');
+      grad.addColorStop(1, '#b98c2c');
+      ctx.fillStyle = grad;
+      roundRectPath(ctx, x0, y, barW, barH, 4);
+      ctx.fill();
+    } else {
+      const half = (barW - 26) / 2;
+      ctx.fillStyle = '#a97fe8';
+      roundRectPath(ctx, x0, y, half, barH, 4);
+      ctx.fill();
+      roundRectPath(ctx, x0 + half + 26, y, half, barH, 4);
+      ctx.fill();
+    }
+    y += barH + gap;
+  }
+
+  ctx.strokeStyle = 'rgba(240,200,105,0.22)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(96, y + 12);
+  ctx.lineTo(W - 96, y + 12);
+  ctx.stroke();
+
+  ctx.fillStyle = 'rgba(205,198,184,0.96)';
+  ctx.font = '400 17px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.textAlign = 'left';
+  const lines = wrapText(ctx, text, W - 176);
+  let ty = y + 50;
+  for (const line of lines) {
+    if (ty > H - 132) {
+      ctx.fillText('……', 88, ty);
+      break;
+    }
+    ctx.fillText(line, 88, ty);
+    ty += 31;
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(139,135,121,0.8)';
+  ctx.font = '500 14px "Zen Maru Gothic", "Noto Sans SC", sans-serif';
+  ctx.fillText('结印求签 · 天机星阵', W / 2, H - 74);
+
+  ctx.fillStyle = 'rgba(163,18,42,0.92)';
+  roundRectPath(ctx, W / 2 - 26, H - 56, 52, 52, 7);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(246,239,224,0.95)';
+  ctx.font = '700 28px "Shippori Mincho", "Noto Serif SC", serif';
+  ctx.fillText('易', W / 2, H - 29);
+}
+
+function shareAnswerCard() {
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex) return;
+  const question = questionInput.value.trim();
+  const body = cardContainer.querySelector('.ac-body')?.textContent ?? hex.interpretation;
+  const text = `天机星阵 · ${hex.name}卦（第${hex.number}卦）\n所问：${question}\n${body}`;
 
   if (navigator.share) {
-    navigator.share({
-      title: `易经 AI 学堂 · ${hex.name}卦`,
-      text,
-    }).catch(() => {});
+    navigator.share({ title: `天机星阵 · ${hex.name}卦`, text }).catch(() => { /* 用户取消 */ });
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+      .then(() => showToast('已复制到剪贴板'))
+      .catch(() => showToast('复制失败，请手动选择'));
   } else {
-    navigator.clipboard.writeText(text).then(() => {
-      showToast('已复制到剪贴板');
-    }).catch(() => {
-      showToast('复制失败，请手动复制');
-    });
+    showToast('当前环境不支持分享');
   }
 }
 
-// ===== 工具函数 =====
-function closeAllPanels() {
-  infoPanel.classList.add('panel-closed');
-  analysisPanel.classList.add('panel-closed');
-  tutorPanel.classList.add('panel-closed');
-  infoPanelVisible = false;
+/* ============================================================
+   AI 配置弹窗
+   ============================================================ */
+function openApiModal() {
+  const cfg = getApiConfig();
+  modalApiKey.value = '';
+  modalBaseUrl.value = cfg.baseUrl;
+  modalModelId.value = cfg.modelId;
+  modalApiStatus.textContent = cfg.apiKey ? '当前已接通。重新填写可覆盖。' : '尚未接通，卦象解读将使用内置文本。';
+  modalApiStatus.className = 'modal-status';
+  apiModal.classList.add('is-on');
+  modalApiKey.focus();
+}
+
+function closeApiModal() {
+  apiModal.classList.remove('is-on');
+}
+
+async function saveApiFromModal() {
+  const key = modalApiKey.value.trim();
+  const baseUrl = modalBaseUrl.value.trim();
+  const modelId = modalModelId.value.trim();
+
+  const patch: Record<string, string> = {};
+  if (key) patch.apiKey = key;
+  if (baseUrl) patch.baseUrl = baseUrl;
+  if (modelId) patch.modelId = modelId;
+  saveApiConfig(patch);
+
+  const cfg = getApiConfig();
+  if (!cfg.apiKey) {
+    isAiOn = false;
+    syncApiState();
+    modalApiStatus.textContent = '未填写 API Key，继续使用内置解读。';
+    modalApiStatus.className = 'modal-status';
+    return;
+  }
+
+  modalApiStatus.textContent = '正在验证连接…';
+  modalApiStatus.className = 'modal-status';
+
+  try {
+    const reply = await testConnection(cfg);
+    isAiOn = true;
+    syncApiState();
+    modalApiStatus.textContent = `接通成功，返回「${reply.slice(0, 12)}」。AI 解读已启用。`;
+    modalApiStatus.className = 'modal-status is-ok';
+    showToast('神谕已接通');
+    setTimeout(() => {
+      closeApiModal();
+      const hex = hexagrams.find((h) => h.number === selectedHexNum);
+      if (hex) requestAiTexts(hex);
+    }, 900);
+  } catch (err) {
+    isAiOn = !!getApiConfig().apiKey;
+    syncApiState();
+    modalApiStatus.textContent = `连接失败：${(err as Error)?.message || '未知错误'}`;
+    modalApiStatus.className = 'modal-status is-err';
+  }
+}
+
+function syncApiState() {
+  apiKeyBtn.classList.toggle('is-on', isAiOn);
+  const label = apiKeyBtn.querySelector('.api-label');
+  if (label) label.textContent = isAiOn ? 'AI 已通' : 'AI';
+  apiKeyBtn.title = isAiOn ? 'AI 神谕已接通，点击可重新配置' : '点击填入接口，启用 AI 神谕';
+}
+
+/* ============================================================
+   杂项
+   ============================================================ */
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str ?? '';
+  return div.innerHTML;
 }
 
 function showToast(msg: string) {
-  const toast = document.createElement('div');
-  toast.style.cssText = `
-    position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
-    z-index: 400; background: var(--card); border: 1px solid var(--border-gold);
-    color: var(--gold); padding: 8px 20px; border-radius: 16px;
-    font-size: 12px; backdrop-filter: blur(12px);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-    animation: toastIn 0.3s ease, toastOut 0.3s ease 2s forwards;
-  `;
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-  setTimeout(() => toast.remove(), 2500);
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  toastLayer.appendChild(el);
+  setTimeout(() => el.remove(), 2600);
 }
 
-// ===== 启动 =====
+/* ---------- 启动 ---------- */
 init();

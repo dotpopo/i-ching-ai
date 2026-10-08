@@ -2,208 +2,290 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>易经 AI 学堂 — 盲盒求签 · 卦象解读</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>☯</text></svg>">
-  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@200;400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#070b18" />
+  <meta name="description" content="六十四卦星阵 · 阴阳师风易经 AI 神谕。结印求签，听卦象说话。" />
+  <title>天机星阵 · 易经 AI 神谕</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23070b18'/><path d='M16 5a11 11 0 100 22 11 11 0 000-22zm0 3a8 8 0 010 16 4 4 0 000-8 4 4 0 010-8z' fill='%23f0c869'/><circle cx='16' cy='12' r='1.6' fill='%23f0c869'/><circle cx='16' cy='20' r='1.6' fill='%23e8384f'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;800&family=Zen+Maru+Gothic:wght@400;500;700;900&family=Noto+Serif+SC:wght@400;600;900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
   <div id="app">
-    <!-- 暗角遮罩 -->
-    <div id="vignette"></div>
-    <!-- 屏幕闪烁 -->
-    <div id="screen-flash"></div>
+    <!-- 3D 星阵画布 -->
+    <canvas id="three-canvas" aria-label="六十四卦三维星阵"></canvas>
+
+    <!-- 氛围叠加层 -->
+    <div id="vignette" aria-hidden="true"></div>
+    <div id="grain" aria-hidden="true"></div>
+    <div id="screen-flash" aria-hidden="true"></div>
+    <div id="scanline" aria-hidden="true"></div>
+
+    <!-- 降临光柱（DOM 版，叠在 3D 之上做辉光溢出） -->
+    <div id="descent-beam" aria-hidden="true"></div>
+
     <!-- 悬停提示 -->
-    <div id="hover-tooltip"></div>
-    <!-- 顶部导航 -->
-    <header id="top-bar">
-      <div class="logo">
-        <span class="logo-icon">☯</span>
-        <span>易经 AI 学堂</span>
+    <div id="hover-tooltip" role="tooltip" aria-hidden="true"></div>
+
+    <!-- ===== 开场仪式 ===== -->
+    <div id="intro" role="dialog" aria-label="命运降临">
+      <div class="intro-inner">
+        <div class="intro-seal" aria-hidden="true">
+          <span class="seal-ring r1"></span>
+          <span class="seal-ring r2"></span>
+          <span class="seal-ring r3"></span>
+          <span class="seal-core"></span>
+        </div>
+        <h1 class="intro-title">
+          <span class="intro-line" data-i="0">命</span>
+          <span class="intro-line" data-i="1">运</span>
+          <span class="intro-line" data-i="2">降</span>
+          <span class="intro-line" data-i="3">临</span>
+        </h1>
+        <p class="intro-sub">六十四卦已成星阵，等你结印</p>
+        <button id="intro-enter" class="intro-btn">
+          <span class="intro-btn-ink"></span>
+          <span class="intro-btn-text">入 阵</span>
+        </button>
+        <p class="intro-hint">← → 转阵 · 点击卦象 · 空格求签</p>
       </div>
-      <nav class="nav-links">
-        <button class="nav-btn active" data-tab="explore">卦象</button>
-        <button class="nav-btn" data-tab="analysis">数据</button>
-        <button class="nav-btn" data-tab="ai-tutor">AI 解读</button>
+    </div>
+
+    <!-- ===== 顶部导航 ===== -->
+    <header id="top-bar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 40 40" width="34" height="34" aria-hidden="true">
+            <circle cx="20" cy="20" r="17" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".55"/>
+            <path d="M20 5a15 15 0 000 30 7.5 7.5 0 010-15 7.5 7.5 0 000-15z" fill="currentColor"/>
+            <circle cx="20" cy="12.5" r="2.4" fill="#070b18"/>
+            <circle cx="20" cy="27.5" r="2.4" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="brand-text">
+          <b>天机星阵</b>
+          <i>易经 AI 神谕</i>
+        </span>
+      </div>
+
+      <nav class="nav-links" aria-label="主导航">
+        <button class="nav-btn is-active" data-tab="explore"><span>卦象</span><em>星阵</em></button>
+        <button class="nav-btn" data-tab="analysis"><span>命盘</span><em>数理</em></button>
+        <button class="nav-btn" data-tab="tutor"><span>神谕</span><em>问卜</em></button>
       </nav>
+
       <div class="header-actions">
-        <span class="header-hint">← → 切换 · 点击卦象</span>
-        <button class="api-key-btn" id="api-key-btn" title="配置 AI API 密钥">🔑 API</button>
+        <button id="search-toggle" class="icon-action" title="搜索卦象 (/)">搜卦</button>
+        <button id="api-key-btn" class="icon-action api-state" title="AI 神谕连接状态">
+          <span class="api-dot" aria-hidden="true"></span><span class="api-label">AI</span>
+        </button>
       </div>
     </header>
 
-    <!-- 主画布 -->
-    <main id="canvas-container">
-      <canvas id="three-canvas"></canvas>
-    </main>
-
-    <!-- 求签按钮 -->
-    <button id="oracle-btn">
-      <span class="oracle-icon">🔮</span>
-      求签
-    </button>
-
-    <!-- API 配置弹窗 -->
-    <div id="api-config-modal">
-      <div class="api-config-content">
-        <div class="panel-header">
-          <h2>🔑 解锁 AI 解读</h2>
-          <button id="api-config-close" class="icon-btn">✕</button>
-        </div>
-        <div class="panel-body">
-          <p style="font-size:12px;color:var(--fg-muted);margin-bottom:14px;">配置 AI API 密钥，即可获得实时卦象解读。<br/>留空则继续使用预设解读。</p>
-          <div class="api-config-field">
-            <label>API Key</label>
-            <input class="api-key-input" id="modal-api-key" type="password" placeholder="输入 DeepSeek API Key" />
-          </div>
-          <div class="api-config-field">
-            <label>Base URL</label>
-            <input class="api-key-input" id="modal-base-url" type="text" placeholder="https://api.deepseek.com" />
-          </div>
-          <div class="api-config-field">
-            <label>模型 ID</label>
-            <input class="api-key-input" id="modal-model-id" type="text" placeholder="deepseek-chat" />
-          </div>
-          <div class="api-config-actions">
-            <button class="api-key-save" id="modal-api-save">保存并验证</button>
-          </div>
-          <div class="api-key-status" id="modal-api-status" style="margin-top:8px"></div>
-        </div>
+    <!-- ===== 搜索浮层 ===== -->
+    <div id="search-layer" class="is-hidden">
+      <div class="search-box">
+        <span class="search-icon" aria-hidden="true">卦</span>
+        <input id="search-input" type="search" placeholder="输入卦名、卦号或关键字，例如 乾 / 17 / 等待" autocomplete="off" />
+        <button id="search-close" class="search-close" aria-label="关闭搜索">✕</button>
       </div>
+      <div id="search-results" class="search-results" role="listbox"></div>
     </div>
 
-    <!-- 盲盒结果弹窗 -->
-    <div id="blindbox-modal">
-      <div class="blindbox-content">
-        <div class="blindbox-cover" id="blindbox-cover">☯</div>
-        <div class="blindbox-result" id="blindbox-result"></div>
-        <div class="blindbox-name" id="blindbox-name"></div>
-        <div class="blindbox-number" id="blindbox-number"></div>
-        <div class="blindbox-interpretation" id="blindbox-interpretation"></div>
-        <div class="blindbox-actions">
-          <button class="blindbox-btn share" id="blindbox-share">📤 分享</button>
-          <button class="blindbox-btn collect" id="blindbox-collect">⭐ 收藏</button>
-          <button class="blindbox-btn close-btn" id="blindbox-close">关闭</button>
+    <!-- ===== 卦象详情面板 ===== -->
+    <aside id="info-panel" aria-label="卦象详情">
+      <div class="panel-head">
+        <div class="panel-head-main">
+          <span id="hexagram-number" class="hex-badge">#1</span>
+          <div>
+            <h2 id="panel-title">乾</h2>
+            <p id="hexagram-trigrams" class="hex-sub">乾为天</p>
+          </div>
         </div>
+        <button id="panel-close" class="icon-btn" aria-label="收起面板">✕</button>
       </div>
-    </div>
 
-    <!-- 分享卡片 -->
-    <div id="share-card">
-      <div class="share-card-header">易经 AI 学堂 · 卦象卡片</div>
-      <div class="share-card-hex" id="share-card-hex">☰</div>
-      <div class="share-card-name" id="share-card-name">乾卦</div>
-      <div class="share-card-number" id="share-card-number">#1 乾为天</div>
-      <div class="share-card-msg" id="share-card-msg"></div>
-      <div class="share-card-footer">扫码或截图分享 · 易经 AI 学堂</div>
-      <div class="share-card-actions">
-        <button class="blindbox-btn share" id="share-download">💾 保存图片</button>
-        <button class="blindbox-btn close-btn" id="share-close">关闭</button>
-      </div>
-    </div>
-
-    <!-- 收藏栏 -->
-    <div id="collection-bar"></div>
-
-    <!-- 信息面板 -->
-    <aside id="info-panel">
-      <div class="panel-header">
-        <h2 id="panel-title">卦象探索</h2>
-        <span id="hexagram-number" class="hex-number">#1</span>
-        <button id="panel-close" class="icon-btn">✕</button>
-      </div>
       <div class="panel-body">
-        <div class="hexagram-display">
-          <div id="hexagram-lines" class="hexagram-lines"></div>
-        </div>
-        <div class="hex-details">
-          <div class="detail-row">
-            <span class="detail-label">卦象</span>
-            <span id="hexagram-trigrams" class="detail-value">乾为天</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">性质</span>
-            <span id="hexagram-nature" class="detail-value">纯阳</span>
-          </div>
-          <div class="detail-row">
-            <span class="detail-label">象征</span>
-            <span id="hexagram-symbol" class="detail-value">天、父、君</span>
+        <div class="hex-stage">
+          <div id="hexagram-lines" class="hex-lines" aria-label="卦象爻线"></div>
+          <div class="hex-stage-meta">
+            <div class="meta-row"><span>卦性</span><b id="hexagram-nature">纯阳</b></div>
+            <div class="meta-row"><span>取象</span><b id="hexagram-symbol">天、父、君</b></div>
           </div>
         </div>
-        <div class="ai-interpretation" id="ai-interpretation">
-          <h3>✦ AI 解读</h3>
-          <div id="ai-text" class="ai-text">
-            <p class="ai-section-title">🌀 传统解读</p>
-            <p>乾卦为六十四卦之首，象征天、创始与纯粹阳刚之力。六爻皆阳，代表事物发展的六个阶段：元亨利贞。</p>
-            <p class="ai-section-title">📊 数据科学视角</p>
-            <p>乾卦代表系统中的最大能量态——所有变量均处于正向激活状态，对应于时间序列中的持续增长阶段。</p>
-            <p class="ai-section-title">👶 6岁小孩能懂</p>
-            <p class="ai-collapsible-content">天就像爸爸一样，很强大很伟大。乾卦告诉我们，做事要一步一步来，就像搭积木一样，先搭最下面的一块，再一块一块往上搭。</p>
-            <p class="ai-section-title">💡 生活启示</p>
-            <p>现在正是最好的时机，就像太阳刚升起，万物都充满希望。</p>
-          </div>
+
+        <div class="panel-tabs" role="tablist" aria-label="解读维度">
+          <button class="ptab is-active" data-view="classic" role="tab">古义</button>
+          <button class="ptab" data-view="modern" role="tab">今解</button>
+          <button class="ptab" data-view="plain" role="tab">白话</button>
+          <button class="ptab" data-view="action" role="tab">行止</button>
         </div>
-        <div class="ai-unlock-section" id="ai-unlock-section">
-          <button class="ai-unlock-btn" id="ai-unlock-btn">
-            <span class="unlock-icon">✨</span>
-            <span class="unlock-text">解锁 AI 解读</span>
-          </button>
+        <div class="oracle-text" id="ai-text" aria-live="polite"></div>
+        <div class="oracle-status" id="ai-status"></div>
+
+        <div class="panel-actions">
+          <button id="collect-btn" class="ghost-btn"><span class="act-ico" aria-hidden="true">缘</span>结缘收藏</button>
+          <button id="ask-btn" class="primary-btn"><span class="act-ico" aria-hidden="true">问</span>以此卦问卜</button>
         </div>
       </div>
     </aside>
 
-    <!-- 数据分析面板 -->
-    <section id="analysis-panel" class="hidden-panel panel-closed">
-      <div class="panel-header">
-        <h2>卦象数据分析</h2>
-        <button id="analysis-close" class="icon-btn">✕</button>
+    <!-- ===== 命盘面板 ===== -->
+    <section id="analysis-panel" class="side-panel is-closed" aria-label="卦象命盘">
+      <div class="panel-head">
+        <div class="panel-head-main">
+          <span class="hex-badge alt">盘</span>
+          <div>
+            <h2>卦象命盘</h2>
+            <p class="hex-sub">六十四卦的结构与分布</p>
+          </div>
+        </div>
+        <button id="analysis-close" class="icon-btn" aria-label="收起面板">✕</button>
       </div>
       <div class="panel-body">
-        <div class="chart-container">
-          <canvas id="chart-canvas"></canvas>
+        <div class="chart-wrap">
+          <canvas id="chart-canvas" aria-label="阳爻分布直方图"></canvas>
         </div>
         <div class="chart-legend">
-          <span class="legend-item"><span class="dot yang"></span>阳爻</span>
-          <span class="legend-item"><span class="dot yin"></span>阴爻</span>
-          <span class="legend-item"><span class="dot avg"></span>均值分布</span>
+          <span><i class="sw yang"></i>阳爻</span>
+          <span><i class="sw yin"></i>阴爻</span>
+          <span><i class="sw mark"></i>当前卦</span>
         </div>
-        <div id="chart-info" class="chart-info">
-          <p>悬停或点击 3D 卦象查看对应数据点</p>
+        <div id="chart-info" class="chart-info"></div>
+
+        <div class="radar-wrap">
+          <canvas id="radar-canvas" aria-label="六爻能量雷达图"></canvas>
+        </div>
+        <p class="radar-caption" id="radar-caption"></p>
+      </div>
+    </section>
+
+    <!-- ===== 神谕问卜面板 ===== -->
+    <section id="tutor-panel" class="side-panel is-closed" aria-label="神谕问卜">
+      <div class="panel-head">
+        <div class="panel-head-main">
+          <span class="hex-badge alt">谕</span>
+          <div>
+            <h2>神谕问卜</h2>
+            <p class="hex-sub">写下所问，卦象作答</p>
+          </div>
+        </div>
+        <button id="tutor-close" class="icon-btn" aria-label="收起面板">✕</button>
+      </div>
+      <div class="panel-body">
+        <div class="ask-current" id="ask-current"></div>
+        <label class="field-label" for="question-input">你所问何事</label>
+        <textarea id="question-input" rows="3" placeholder="例如：这次转岗该不该去？"></textarea>
+        <div class="ask-chips" id="ask-chips"></div>
+        <button id="generate-btn" class="primary-btn wide"><span class="act-ico" aria-hidden="true">卜</span>起 卦 问 神</button>
+
+        <div id="ai-card-container" class="card-stage">
+          <div class="card-placeholder">
+            <span class="ph-mark" aria-hidden="true">签</span>
+            <p>选一卦，写下所问，生成专属解签</p>
+          </div>
+        </div>
+        <div id="card-actions" class="card-actions" hidden>
+          <button id="card-download" class="ghost-btn">存为图片</button>
+          <button id="card-share" class="ghost-btn">分享</button>
         </div>
       </div>
     </section>
 
-    <!-- AI 卦象卡片生成器 -->
-    <section id="tutor-panel" class="hidden-panel panel-closed">
-      <div class="panel-header">
-        <h2>🔮 AI 卦象解读</h2>
-        <button id="tutor-close" class="icon-btn">✕</button>
-      </div>
-      <div class="panel-body">
-        <div class="card-generator">
-          <div class="generator-intro">
-            <p>输入你的问题，AI 将结合当前卦象为你生成专属解读卡片</p>
-          </div>
-          <div class="generator-input-area">
-            <textarea id="question-input" placeholder="例如：这次面试能成功吗？" rows="3"></textarea>
-            <button id="generate-btn" class="generate-btn">
-              <span>✨ 生成解读</span>
-            </button>
-          </div>
-          <div id="ai-card-container" class="ai-card-container">
-            <div class="ai-card-placeholder">
-              <span class="placeholder-icon">🎴</span>
-              <p>选择卦象并输入问题，生成你的专属解读卡片</p>
+    <!-- ===== 求签台 ===== -->
+    <div id="oracle-dock">
+      <button id="oracle-btn" class="oracle-btn" aria-label="结印求签">
+        <span class="oracle-halo" aria-hidden="true"></span>
+        <span class="oracle-ico" aria-hidden="true">签</span>
+        <span class="oracle-label">求签</span>
+      </button>
+      <p class="oracle-tip">空格键</p>
+    </div>
+
+    <!-- ===== 式神录（收藏） ===== -->
+    <div id="collection-bar" aria-label="已结缘的卦象"></div>
+
+    <!-- ===== AI 配置弹窗 ===== -->
+    <div id="api-config-modal" class="modal" role="dialog" aria-modal="true" aria-label="AI 神谕配置">
+      <div class="modal-card">
+        <div class="panel-head">
+          <div class="panel-head-main">
+            <span class="hex-badge alt">钥</span>
+            <div>
+              <h2>接通神谕</h2>
+              <p class="hex-sub">填入任意 OpenAI 兼容接口即可</p>
             </div>
           </div>
-          <div class="card-actions" id="card-actions" style="display:none;">
-            <button id="card-download" class="card-action-btn">💾 下载卡片</button>
-            <button id="card-share" class="card-action-btn">📤 分享</button>
+          <button id="api-config-close" class="icon-btn" aria-label="关闭">✕</button>
+        </div>
+        <div class="panel-body">
+          <p class="modal-note">未填写时，卦象仍可解读，只是用内置文本。填写后由 AI 实时生成。</p>
+          <label class="field-label" for="modal-api-key">API Key</label>
+          <input id="modal-api-key" class="text-input" type="password" placeholder="sk-..." autocomplete="off" />
+          <label class="field-label" for="modal-base-url">Base URL</label>
+          <input id="modal-base-url" class="text-input" type="text" placeholder="https://api.deepseek.com" autocomplete="off" />
+          <label class="field-label" for="modal-model-id">模型 ID</label>
+          <input id="modal-model-id" class="text-input" type="text" placeholder="deepseek-chat" autocomplete="off" />
+          <div class="modal-actions">
+            <button id="modal-api-save" class="primary-btn wide">保存并验证</button>
           </div>
+          <div id="modal-api-status" class="modal-status" aria-live="polite"></div>
         </div>
       </div>
-    </section>
+    </div>
+
+    <!-- ===== 求签结果 ===== -->
+    <div id="blindbox-modal" class="modal" role="dialog" aria-modal="true" aria-label="求签结果">
+      <div class="modal-card result-card">
+        <button id="blindbox-close" class="icon-btn corner" aria-label="关闭">✕</button>
+        <div class="result-head">
+          <span class="result-mark" id="blindbox-cover" aria-hidden="true">签</span>
+          <div>
+            <div class="result-name" id="blindbox-name"></div>
+            <div class="result-number" id="blindbox-number"></div>
+          </div>
+        </div>
+        <div class="result-hex" id="blindbox-result"></div>
+        <div class="result-body" id="blindbox-interpretation"></div>
+        <div class="result-actions">
+          <button class="ghost-btn" id="blindbox-share">分享符卡</button>
+          <button class="primary-btn" id="blindbox-collect">结缘</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 分享符卡 ===== -->
+    <div id="share-card" class="modal" role="dialog" aria-modal="true" aria-label="分享符卡">
+      <div class="modal-card share-preview">
+        <div class="share-canvas-wrap">
+          <canvas id="share-canvas" width="720" height="960" aria-label="符卡预览"></canvas>
+        </div>
+        <div class="result-actions">
+          <button class="primary-btn" id="share-download">保存图片</button>
+          <button class="ghost-btn" id="share-close">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 提示条 ===== -->
+    <div id="toast-layer" aria-live="polite"></div>
+
+    <!-- ===== 错误兜底 ===== -->
+    <div id="error-overlay" hidden>
+      <div class="err-card">
+        <h2>结界未能展开</h2>
+        <p id="error-detail">初始化过程中出现了问题。</p>
+        <p class="err-hint">按 F12 打开控制台可以看到完整堆栈。</p>
+      </div>
+    </div>
+
+    <!-- ===== 加载层 ===== -->
+    <div id="loading-overlay">
+      <div class="load-ring" aria-hidden="true"></div>
+      <p>正在展开星阵</p>
+    </div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>

@@ -26,28 +26,20 @@ interface ChatResponse {
 }
 
 const handler: Handler = async (event) => {
-  // 只允许 POST 请求
+  // 预检必须最先处理：放在 POST 判断之后它永远走不到
+  if (event.httpMethod === 'OPTIONS') {
+    return {
+      statusCode: 204,
+      body: '',
+      headers: corsHeaders(),
+    };
+  }
+
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
       body: JSON.stringify({ error: 'Method not allowed' }),
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
-    };
-  }
-
-  // 处理预检请求
-  if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      },
+      headers: corsHeaders(),
     };
   }
 
