@@ -622,14 +622,126 @@ html, body {
   margin-top: 0;
 }
 
-/* API 配置触发按钮 */
-.api-config-trigger {
-  margin-top: 10px;
+/* ===== AI 解锁按钮 ===== */
+.ai-unlock-section {
+  margin-top: 12px;
   padding-top: 10px;
   border-top: 1px solid var(--border);
+  text-align: center;
 }
 
-/* API 配置弹窗 */
+.ai-unlock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, var(--crimson), #8b1a2b);
+  color: var(--gold);
+  border: 1px solid rgba(232,197,71,0.3);
+  border-radius: 24px;
+  padding: 10px 28px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
+  letter-spacing: 0.5px;
+}
+
+.ai-unlock-btn::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 26px;
+  background: linear-gradient(135deg, var(--crimson), var(--gold), var(--purple));
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.ai-unlock-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 24px rgba(196,30,58,0.4), 0 0 12px rgba(232,197,71,0.2);
+  border-color: var(--gold);
+}
+
+.ai-unlock-btn:hover::before {
+  opacity: 1;
+}
+
+.ai-unlock-btn:active {
+  transform: translateY(0);
+}
+
+.ai-unlock-btn.unlocked {
+  background: linear-gradient(135deg, #1a3a2a, #0d1f15);
+  border-color: rgba(232,197,71,0.4);
+  color: var(--gold);
+  cursor: default;
+}
+
+.ai-unlock-btn.unlocked:hover {
+  box-shadow: 0 2px 12px rgba(232,197,71,0.15);
+  transform: none;
+}
+
+.ai-unlock-btn .unlock-icon {
+  font-size: 16px;
+  animation: unlockPulse 2s ease-in-out infinite;
+}
+
+.ai-unlock-btn.unlocked .unlock-icon {
+  animation: none;
+}
+
+@keyframes unlockPulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.15); }
+}
+
+/* ===== AI 解读展开/收起 ===== */
+.ai-collapsible {
+  position: relative;
+}
+
+.ai-collapsible-content {
+  transition: max-height 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+.ai-collapsible-content.collapsed {
+  max-height: 80px;
+  mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+}
+
+.ai-collapsible-toggle {
+  display: inline-block;
+  color: var(--gold);
+  font-size: 11px;
+  cursor: pointer;
+  margin-top: 4px;
+  padding: 2px 0;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  transition: color 0.2s;
+}
+
+.ai-collapsible-toggle:hover {
+  color: var(--crimson);
+}
+
+.ai-collapsible-toggle::after {
+  content: ' 展开';
+}
+
+.ai-collapsible-toggle.expanded::after {
+  content: ' 收起';
+}
+
+/* ===== API 配置弹窗 ===== */
 #api-config-modal {
   position: fixed;
   inset: 0;
@@ -637,11 +749,11 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0,0,0,0.85);
-  backdrop-filter: blur(8px);
+  background: rgba(0,0,0,0.88);
+  backdrop-filter: blur(12px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease;
+  transition: opacity 0.4s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 #api-config-modal.visible {

@@ -34,7 +34,8 @@ const modalBaseUrl = document.getElementById('modal-base-url') as HTMLInputEleme
 const modalModelId = document.getElementById('modal-model-id') as HTMLInputElement;
 const modalApiSave = document.getElementById('modal-api-save')!;
 const modalApiStatus = document.getElementById('modal-api-status')!;
-const openApiConfigBtn = document.getElementById('open-api-config')!;
+const aiUnlockBtn = document.getElementById('ai-unlock-btn')!;
+const aiUnlockSection = document.getElementById('ai-unlock-section')!;
 const collectionBar = document.getElementById('collection-bar')!;
 
 // ===== 初始化 =====
@@ -67,6 +68,7 @@ function init() {
     drawChart(1);
     renderCollectionBar();
     updateApiConfigUI();
+    updateAiUnlockButton();
 
   } catch (err) {
     console.error('初始化失败:', err);
@@ -161,10 +163,15 @@ function bindEvents() {
     if (e.key === 'Enter') saveApiConfigFromModal();
   });
 
-  // 打开 API 配置按钮（在 info panel 内）
-  openApiConfigBtn.addEventListener('click', () => {
-    hideApiConfigModal();
-    setTimeout(() => showApiConfigModal(), 100);
+  // AI 解锁按钮
+  aiUnlockBtn.addEventListener('click', () => {
+    if (isAiConfigured) {
+      // 已配置，切换 AI 解读面板的显示
+      switchTab('ai-tutor');
+    } else {
+      // 未配置，打开配置弹窗
+      showApiConfigModal();
+    }
   });
 
   // AI 导师输入
@@ -179,9 +186,10 @@ function bindEvents() {
 // ===== API 配置弹窗 =====
 function showApiConfigModal() {
   const config = getApiConfig();
-  modalApiKey.value = config.apiKey ? config.apiKey.slice(0, 8) + '...' + config.apiKey.slice(-4) : '';
-  modalBaseUrl.value = config.baseUrl;
-  modalModelId.value = config.modelId;
+  // 所有输入框清空，不显示任何默认值
+  modalApiKey.value = '';
+  modalBaseUrl.value = config.baseUrl || '';
+  modalModelId.value = config.modelId || '';
   modalApiStatus.textContent = '';
   modalApiStatus.style.color = '';
   apiConfigModal.classList.add('visible');
@@ -196,25 +204,8 @@ async function saveApiConfigFromModal() {
   const baseUrl = modalBaseUrl.value.trim();
   const modelId = modalModelId.value.trim();
 
-  // 如果用户清空了 key，删除所有配置
-  if (!key && !baseUrl && !modelId) {
-    // 检查是否有之前保存的值
-    const hasStoredKey = localStorage.getItem('iching_api_key');
-    const hasStoredUrl = localStorage.getItem('iching_api_base_url');
-    const hasStoredModel = localStorage.getItem('iching_api_model_id');
-    if (!hasStoredKey && !hasStoredUrl && !hasStoredModel) {
-      // 全部清空，恢复默认
-      saveApiConfig({ apiKey: '', baseUrl: '', modelId: '' });
-      isAiConfigured = false;
-      updateApiConfigUI();
-      hideApiConfigModal();
-      showToast('已恢复为预设解读模式');
-      return;
-    }
-  }
-
   const config: Record<string, string> = {};
-  if (key && !key.includes('...')) config.apiKey = key;
+  if (key) config.apiKey = key;
   if (baseUrl) config.baseUrl = baseUrl;
   if (modelId) config.modelId = modelId;
   saveApiConfig(config);
@@ -222,7 +213,6 @@ async function saveApiConfigFromModal() {
   // 验证配置
   const newConfig = getApiConfig();
   if (newConfig.apiKey) {
-    // 测试 API 连接
     modalApiStatus.textContent = '正在验证连接…';
     modalApiStatus.style.color = 'var(--gold)';
     try {
@@ -244,6 +234,8 @@ async function saveApiConfigFromModal() {
   }
 
   updateApiConfigUI();
+  updateAiUnlockButton();
+  updateAiInterpretation(hexagrams.find((h) => h.number === selectedHexNum)!);
   setTimeout(() => hideApiConfigModal(), 1500);
 }
 
@@ -255,6 +247,21 @@ function updateApiConfigUI() {
   } else {
     apiKeyBtn.textContent = '🔑 API';
     apiKeyBtn.classList.remove('connected');
+  }
+}
+
+// ===== AI 解锁按钮状态 =====
+function updateAiUnlockButton() {
+  if (isAiConfigured) {
+    aiUnlockBtn.classList.add('unlocked');
+    aiUnlockBtn.querySelector('.unlock-text')!.textContent = 'AI 解读已解锁';
+    aiUnlockBtn.querySelector('.unlock-icon')!.textContent = '🔓';
+    aiUnlockSection.style.display = 'none';
+  } else {
+    aiUnlockBtn.classList.remove('unlocked');
+    aiUnlockBtn.querySelector('.unlock-text')!.textContent = '✨ 解锁 AI 解读';
+    aiUnlockBtn.querySelector('.unlock-icon')!.textContent = '✨';
+    aiUnlockSection.style.display = '';
   }
 }
 
@@ -290,7 +297,7 @@ function updateInfoPanel(num: number) {
     linesContainer.appendChild(lineEl);
   });
 
-  // 更新 AI 解读（预设内容，AI 配置后动态生成）
+  // 更新 AI 解读
   updateAiInterpretation(hex);
 
   infoPanel.classList.remove('panel-closed');
@@ -300,13 +307,11 @@ function updateAiInterpretation(hex: Hexagram) {
   const aiText = document.getElementById('ai-text')!;
 
   if (isAiConfigured) {
-    // 显示加载状态
     aiText.innerHTML = `
       <p class="ai-section-title">🌀 传统解读</p>
       <p class="typing">AI 正在解读…</p>
     `;
 
-    // 并行生成多个 AI 解读
     generateAiInterpretations(hex).then((interpretations) => {
       aiText.innerHTML = `
         <p class="ai-section-title">🌀 传统解读</p>
@@ -314,22 +319,29 @@ function updateAiInterpretation(hex: Hexagram) {
         <p class="ai-section-title">📊 数据科学视角</p>
         <p>${interpretations.dataScience}</p>
         <p class="ai-section-title">👶 6岁小孩能懂</p>
-        <p>${interpretations.childFriendly}</p>
+        <div class="ai-collapsible">
+          <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(interpretations.childFriendly)}">${escapeHtml(truncateText(interpretations.childFriendly, 80))}</div>
+          <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
+        </div>
         <p class="ai-section-title">💡 生活启示</p>
         <p>${interpretations.lifeAdvice}</p>
       `;
+      bindCollapsibleToggles();
     }).catch(() => {
-      // 失败时回退到预设内容
       aiText.innerHTML = `
         <p class="ai-section-title">🌀 传统解读</p>
         <p>${hex.interpretation}</p>
         <p class="ai-section-title">📊 数据科学视角</p>
         <p>${hex.dataScience}</p>
         <p class="ai-section-title">👶 6岁小孩能懂</p>
-        <p>${hex.interpretation}</p>
+        <div class="ai-collapsible">
+          <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(getChildFriendlyExplanation(hex))}">${escapeHtml(truncateText(getChildFriendlyExplanation(hex), 80))}</div>
+          <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
+        </div>
         <p class="ai-section-title">💡 生活启示</p>
-        <p>${hex.dataScience}</p>
+        <p>${getLifeAdvice(hex)}</p>
       `;
+      bindCollapsibleToggles();
     });
   } else {
     // 预设内容
@@ -339,12 +351,47 @@ function updateAiInterpretation(hex: Hexagram) {
       <p class="ai-section-title">📊 数据科学视角</p>
       <p>${hex.dataScience}</p>
       <p class="ai-section-title">👶 6岁小孩能懂</p>
-      <p>${getChildFriendlyExplanation(hex)}</p>
+      <div class="ai-collapsible">
+        <div class="ai-collapsible-content collapsed" data-full="${escapeHtml(getChildFriendlyExplanation(hex))}">${escapeHtml(truncateText(getChildFriendlyExplanation(hex), 80))}</div>
+        <button class="ai-collapsible-toggle" aria-label="展开/收起">展开</button>
+      </div>
       <p class="ai-section-title">💡 生活启示</p>
       <p>${getLifeAdvice(hex)}</p>
-      <p style="color:var(--gold);margin-top:8px;font-size:11px;">🔑 配置 API Key 可解锁 AI 实时解读</p>
     `;
+    bindCollapsibleToggles();
   }
+}
+
+function bindCollapsibleToggles() {
+  document.querySelectorAll('.ai-collapsible-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const content = btn.previousElementSibling as HTMLElement;
+      if (!content) return;
+      const isCollapsed = content.classList.contains('collapsed');
+      if (isCollapsed) {
+        content.classList.remove('collapsed');
+        content.style.maxHeight = content.dataset.full!.length * 18 + 'px';
+        btn.classList.add('expanded');
+        btn.textContent = '收起';
+      } else {
+        content.classList.add('collapsed');
+        content.style.maxHeight = '80px';
+        btn.classList.remove('expanded');
+        btn.textContent = '展开';
+      }
+    });
+  });
+}
+
+function escapeHtml(str: string): string {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text;
+  return text.slice(0, maxLen) + '…';
 }
 
 async function generateAiInterpretations(hex: Hexagram): Promise<{
@@ -364,7 +411,6 @@ async function generateAiInterpretations(hex: Hexagram): Promise<{
 
   const results: Record<string, string> = {};
 
-  // 串行调用以避免速率限制
   for (const [key, prompt] of Object.entries(prompts)) {
     try {
       const response = await callChatCompletion([
@@ -373,7 +419,6 @@ async function generateAiInterpretations(hex: Hexagram): Promise<{
       ], config);
       results[key] = response;
     } catch (err) {
-      // 使用预设内容作为回退
       results[key] = getDefaultInterpretation(key, hex);
     }
   }
