@@ -183,6 +183,8 @@ export class IChingScene {
   selectedHexagram = 1;
   hoveredHexagram: number | null = null;
   hoveredOrb = false;
+  /** 灵枢点击反馈的衰减进度 */
+  private orbPulse = 0;
 
   animationId = 0;
   isRunning = false;
@@ -906,16 +908,32 @@ export class IChingScene {
   pick(): { hexagram: number | null; orb: boolean } {
     this.raycaster.setFromCamera(this.mouse, this.camera);
 
-    const orbHit = this.raycaster.intersectObject(this.centralOrb, false).length > 0;
-
     // 拾取目标只在卦象建好时算一次，别每帧重建数组
     const hits = this.raycaster.intersectObjects(this.hitTargets, false);
     let num: number | null = null;
+    let hexDist = Infinity;
     if (hits.length > 0) {
       const n = hits[0].object.userData.hexagramNumber;
-      if (typeof n === 'number') num = n;
+      if (typeof n === 'number') {
+        num = n;
+        hexDist = hits[0].distance;
+      }
     }
-    return { hexagram: num, orb: orbHit };
+
+    // 灵枢在阵心，只有它确实比卦象更靠前时才算命中。
+    // 否则从阵心望向对面那圈符咒时，灵枢会把它们整片挡住。
+    const orbHit = this.raycaster.intersectObject(this.centralOrb, false)[0];
+    const orb = !!orbHit && orbHit.distance <= hexDist;
+
+    // 命中灵枢时就不再报卦象，避免悬停提示被"第 N 卦"覆盖掉
+    return { hexagram: orb ? null : num, orb };
+  }
+
+  /** 灵枢被点击时的反馈：核心炸开一圈粒子，并短暂膨胀 */
+  pulseOrb() {
+    this.orbPulse = 1;
+    this.centralOrb.updateWorldMatrix(true, false);
+    this.triggerBurst(this.centralOrb.getWorldPosition(new THREE.Vector3()));
   }
 
   /**
@@ -1026,8 +1044,19 @@ export class IChingScene {
     if (this.centralOrb) {
       this.centralOrb.rotation.y += delta * 0.34 * motion;
       this.centralOrb.position.y = Math.sin(elapsed * 0.55) * 0.26;
-      const s = 1 + Math.sin(elapsed * 1.3) * 0.03;
+
+      // 点击反馈：先涨后落的一次脉冲
+      if (this.orbPulse > 0) this.orbPulse = Math.max(0, this.orbPulse - delta * 2.2);
+      const pop = Math.sin(this.orbPulse * Math.PI) * 0.45;
+
+      const s = 1 + Math.sin(elapsed * 1.3) * 0.03 + pop + (this.hoveredOrb ? 0.05 : 0);
       this.centralOrb.scale.setScalar(s);
+
+      // 悬停与点击都要看得出来，否则用户不知道"这个能点"
+      if (this.centralOrb.material instanceof THREE.MeshStandardMaterial) {
+        this.centralOrb.material.emissiveIntensity =
+          1.6 + (this.hoveredOrb ? 1.1 : 0) + pop * 3;
+      }
     }
     this.spindleRings.forEach((ring, i) => {
       ring.rotation.z += delta * (0.2 + i * 0.12) * motion * (i % 2 === 0 ? 1 : -1);

@@ -43,7 +43,10 @@ const hexNature = $('hexagram-nature');
 const hexSymbol = $('hexagram-symbol');
 const hexLines = $('hexagram-lines');
 const aiText = $('ai-text');
-const aiStatus = $('ai-status');
+const divineBar = $('divine-bar');
+const divineTitle = $('divine-title');
+const divineSub = $('divine-sub');
+const divineBtn = $<HTMLButtonElement>('divine-btn');
 const pTabs = document.querySelectorAll<HTMLButtonElement>('.ptab');
 
 const chartInfo = $('chart-info');
@@ -95,10 +98,13 @@ let searchCursor = 0;
 let searchMatches: Hexagram[] = [];
 let introDone = false;
 
-/** 当前卦的四种解读文本（内置兜底 + AI 覆盖） */
+/** 当前卦的四种解读文本（内置兜底 + 通神后的 AI 版本） */
 let oracleTexts: OracleTexts = { classic: '', modern: '', plain: '', action: '' };
-let aiGenerationId = 0;
-let aiDebounce = 0;
+/** 通神状态机 */
+let divineState: 'idle' | 'loading' | 'done' | 'error' = 'idle';
+let divineError = '';
+/** 已通神的卦按卦号缓存。翻走再翻回来不重复打接口。 */
+const divineCache = new Map<number, OracleTexts>();
 let typewriterHandle = 0;
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -241,9 +247,28 @@ function bindEvents() {
     hoverTooltip.style.top = `${e.clientY}px`;
   });
 
-  canvas.addEventListener('click', () => {
+  // 记录按下位置：拖动旋转视角时不该被当成点击
+  let downX = 0;
+  let downY = 0;
+  canvas.addEventListener('pointerdown', (e) => {
+    downX = e.clientX;
+    downY = e.clientY;
+  });
+
+  canvas.addEventListener('click', (e) => {
     if (!scene || !introDone) return;
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return; // 这是拖动
+
     const picked = scene.pick();
+
+    // 灵枢优先。它就是阵心那个"结印求签"的入口，
+    // 之前这里只判了卦象，所以悬停有提示、点下去没反应。
+    if (picked.orb) {
+      scene.pulseOrb();
+      void rollOracle();
+      return;
+    }
+
     if (picked.hexagram !== null) {
       selectHexagram(picked.hexagram, true);
     }
@@ -265,6 +290,11 @@ function bindEvents() {
       pTabs.forEach((t) => t.classList.toggle('is-active', t === tab));
       renderOracleText(false);
     });
+  });
+
+  // 通神：唯一会调 AI 解读的入口
+  divineBtn.addEventListener('click', () => {
+    void divineHexagram();
   });
 
   $('collect-btn').addEventListener('click', toggleBond);
@@ -290,7 +320,7 @@ function bindEvents() {
     });
   });
 
-  oracleBtn.addEventListener('click', rollOracle);
+  oracleBtn.addEventListener('click', () => { void rollOracle(); });
   $('blindbox-close').addEventListener('click', () => blindboxModal.classList.remove('is-on'));
   blindboxModal.addEventListener('click', (e) => {
     if (e.target === blindboxModal) blindboxModal.classList.remove('is-on');
@@ -346,7 +376,7 @@ function onKeyDown(e: KeyboardEvent) {
 
   if (e.key === ' ') {
     e.preventDefault();
-    if (introDone) rollOracle();
+    if (introDone) void rollOracle();
     return;
   }
 
@@ -434,10 +464,14 @@ function updatePanel(hex: Hexagram) {
   infoPanel.classList.remove('is-closed');
   syncCollectBtn();
 
-  // 先铺内置文本，再异步让 AI 覆盖
-  oracleTexts = fallbackTexts(hex);
+  // 通神结果按卦缓存；没通过神就显示内置文本。
+  // 注意这里**不**调 AI：通神是用户主动动作，见 divineHexagram。
+  const cached = divineCache.get(hex.number);
+  oracleTexts = cached ?? fallbackTexts(hex);
+  divineState = cached ? 'done' : 'idle';
+  divineError = '';
   renderOracleText(true);
-  requestAiTexts(hex);
+  renderDivineBar();
 }
 
 function closeInfo() {
@@ -485,25 +519,27 @@ function renderOracleText(withTypewriter: boolean) {
   step();
 }
 
-/* ---------- AI 生成四维解读 ---------- */
+/* ---------- 主动通神：四维解读 ---------- */
 /**
- * 防抖入口：连续按方向键翻卦时，不应该每一卦都打四个请求出去。
- * 停手 360ms 后才真正发起，中途的请求靠 aiGenerationId 作废。
+ * 通神是**用户主动动作**，不再自动触发。
+ *
+ * 之前每进一次页面、每滑一卦都会自动打 4 个请求出去，接口消耗极快。
+ * 现在只有点「通神」按钮才调用，结果按卦号缓存，翻回来不重复请求。
  */
-function requestAiTexts(hex: Hexagram) {
+async function divineHexagram() {
+  const hex = hexagrams.find((h) => h.number === selectedHexNum);
+  if (!hex || divineState === 'loading') return;
+
   if (!isAiOn) {
-    setStatus('', false);
+    divineState = 'error';
+    divineError = '神谕尚未接通。点右上角「AI」填入密钥，或让服务端配好 LLM_KEY。';
+    renderDivineBar();
     return;
   }
-  if (aiDebounce) window.clearTimeout(aiDebounce);
-  setStatus('正在通神…', false);
-  aiDebounce = window.setTimeout(() => {
-    void runAiTexts(hex);
-  }, 360);
-}
 
-async function runAiTexts(hex: Hexagram) {
-  const genId = ++aiGenerationId;
+  divineState = 'loading';
+  divineError = '';
+  renderDivineBar();
 
   const lineStr = hex.lines.map((l) => (l === 1 ? '阳爻' : '阴爻')).join('，');
   const base = `第${hex.number}卦「${hex.name}」（${hex.chinese}）。六爻自下而上：${lineStr}。卦性：${hex.nature}。取象：${hex.symbol}。`;
@@ -568,34 +604,69 @@ async function runAiTexts(hex: Hexagram) {
 
   // 网关可能慢到几十秒，超过 8 秒就告诉用户在等什么，别让人以为卡死了
   const slowHint = window.setTimeout(() => {
-    if (genId === aiGenerationId) setStatus('网关响应较慢，仍在等待…', false);
+    if (divineState === 'loading') divineSub.textContent = '网关响应较慢，仍在等待…';
   }, 8000);
 
   const { results, failed, lastError } = await callMany(prompts, getApiConfig());
   window.clearTimeout(slowHint);
-  if (genId !== aiGenerationId) return; // 用户已经切走了
 
-  oracleTexts = results as OracleTexts;
-  renderOracleText(true);
+  // 只要有一条成功就写进缓存。哪怕用户中途切走了，下次翻回来直接可用。
+  if (failed < prompts.length) divineCache.set(hex.number, results as OracleTexts);
 
-  if (failed === 0) {
-    setStatus('本卦解读由 AI 实时生成', true);
-  } else if (failed === prompts.length) {
-    setStatus(`AI 调用失败，已回退内置解读。原因：${lastError}`, false);
-  } else {
-    setStatus(`部分解读由 AI 生成（${prompts.length - failed}/${prompts.length}），其余为内置文本。原因：${lastError}`, false);
-  }
-}
+  // 用户可能已经切到别的卦了，那就只留缓存，不动界面
+  if (selectedHexNum !== hex.number) return;
 
-function setStatus(text: string, ok: boolean) {
-  if (!text) {
-    aiStatus.classList.remove('is-on', 'is-ok');
-    aiStatus.textContent = '';
+  if (failed === prompts.length) {
+    divineState = 'error';
+    divineError = lastError || '未知错误';
+    renderDivineBar();
     return;
   }
-  aiStatus.textContent = text;
-  aiStatus.classList.add('is-on');
-  aiStatus.classList.toggle('is-ok', ok);
+
+  oracleTexts = results as OracleTexts;
+  divineState = 'done';
+  divineError = failed > 0
+    ? `其中 ${failed}/${prompts.length} 条失败，这几条仍是内置文本。原因：${lastError}`
+    : '';
+  renderOracleText(true);
+  renderDivineBar();
+}
+
+/** 同步通神栏的状态与文案 */
+function renderDivineBar() {
+  const hasCache = divineCache.has(selectedHexNum);
+
+  divineBar.classList.toggle('is-loading', divineState === 'loading');
+  divineBar.classList.toggle('is-done', divineState === 'done');
+  divineBar.classList.toggle('is-error', divineState === 'error');
+  divineBtn.disabled = divineState === 'loading';
+
+  if (divineState === 'loading') {
+    divineTitle.textContent = '通神中';
+    divineSub.textContent = '正在请这一卦展开，四路并行，稍候。';
+    divineBtn.textContent = '通神中';
+    return;
+  }
+
+  if (divineState === 'error') {
+    divineTitle.textContent = '通神未成';
+    divineSub.textContent = divineError || '未知原因，可以再试一次。';
+    divineBtn.textContent = '重试';
+    return;
+  }
+
+  if (divineState === 'done' || hasCache) {
+    divineTitle.textContent = '已通神';
+    divineSub.textContent = divineError || '以上四维由 AI 就这一卦生成。切走再回来不会重复请求。';
+    divineBtn.textContent = '再通一次';
+    return;
+  }
+
+  divineTitle.textContent = '未通神';
+  divineSub.textContent = isAiOn
+    ? '下面是内置解读。想让 AI 就这一卦展开，点右边。'
+    : '下面是内置解读。神谕未接通，点右上角「AI」可配置。';
+  divineBtn.textContent = '通 神';
 }
 
 /* ============================================================
@@ -697,8 +768,99 @@ function onSearchKey(e: KeyboardEvent) {
 /* ============================================================
    求签
    ============================================================ */
-function rollOracle() {
-  if (!introDone) return;
+const SIGN_W = 22;
+const SIGN_H = 104;
+/** 仪式进行中，挡住重复点击 */
+let casting = false;
+
+/**
+ * 求签仪式：签从按钮里被抖出来，划一道弧到上方，再坠下，
+ * 落定那一刻爆一圈光，签本身化作卡片。
+ *
+ * 用 Web Animations API 而不是 CSS 类，因为路径要按按钮的实际位置算，
+ * 而且要靠 `finished` 精确串起"飞 → 坠 → 落定 → 翻牌"四段。
+ */
+async function playSignRitual(): Promise<void> {
+  if (reducedMotion) return;
+
+  const from = oracleBtn.getBoundingClientRect();
+  const startX = from.left + from.width / 2 - SIGN_W / 2;
+  const startY = from.top + from.height / 2 - SIGN_H / 2;
+
+  const cx = window.innerWidth / 2 - SIGN_W / 2;
+  const apexY = Math.max(72, window.innerHeight * 0.16);
+  const landY = window.innerHeight * 0.44 - SIGN_H / 2;
+
+  const stick = document.createElement('div');
+  stick.className = 'sign-stick';
+  stick.style.inlineSize = `${SIGN_W}px`;
+  stick.style.blockSize = `${SIGN_H}px`;
+  document.body.appendChild(stick);
+
+  // ① 从按钮里飞出，划弧到屏幕上方
+  await stick.animate([
+    { transform: `translate(${startX}px, ${startY}px) rotate(0deg) scale(0.5)`, opacity: 0 },
+    { transform: `translate(${startX}px, ${startY - 72}px) rotate(-24deg) scale(1)`, opacity: 1, offset: 0.28 },
+    { transform: `translate(${(startX + cx) / 2}px, ${apexY}px) rotate(215deg) scale(1.06)`, opacity: 1, offset: 0.72 },
+    { transform: `translate(${cx}px, ${apexY + 46}px) rotate(360deg) scale(1)`, opacity: 1 },
+  ], { duration: 640, easing: 'cubic-bezier(0.2, 0.85, 0.3, 1)', fill: 'forwards' }).finished;
+
+  // ② 坠下
+  await stick.animate([
+    { transform: `translate(${cx}px, ${apexY + 46}px) rotate(360deg) scale(1)`, opacity: 1 },
+    { transform: `translate(${cx}px, ${landY}px) rotate(524deg) scale(1.03)`, opacity: 1 },
+  ], { duration: 500, easing: 'cubic-bezier(0.45, 0, 0.85, 0.55)', fill: 'forwards' }).finished;
+
+  // ③ 落定：冲击波 + 火星 + 一层金光
+  spawnSignBurst(cx + SIGN_W / 2, landY + SIGN_H / 2);
+  flash(0.55);
+
+  // ④ 签化作卡片：放大淡出
+  await stick.animate([
+    { transform: `translate(${cx}px, ${landY}px) rotate(524deg) scale(1.03)`, opacity: 1 },
+    { transform: `translate(${cx}px, ${landY}px) rotate(566deg) scale(1.55)`, opacity: 0 },
+  ], { duration: 280, easing: 'ease-out', fill: 'forwards' }).finished;
+
+  stick.remove();
+}
+
+/** 落定那一刻的冲击波与火星 */
+function spawnSignBurst(x: number, y: number) {
+  const ring = document.createElement('div');
+  ring.className = 'sign-ring';
+  ring.style.left = `${x}px`;
+  ring.style.top = `${y}px`;
+  document.body.appendChild(ring);
+  ring.animate([
+    { transform: 'translate(-50%, -50%) scale(0.2)', opacity: 0.9 },
+    { transform: 'translate(-50%, -50%) scale(3.4)', opacity: 0 },
+  ], { duration: 640, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }).onfinish = () => ring.remove();
+
+  const COUNT = 16;
+  for (let i = 0; i < COUNT; i++) {
+    const spark = document.createElement('span');
+    spark.className = 'sign-spark';
+    spark.style.left = `${x}px`;
+    spark.style.top = `${y}px`;
+    document.body.appendChild(spark);
+
+    const a = (i / COUNT) * Math.PI * 2 + Math.random() * 0.5;
+    const d = 44 + Math.random() * 76;
+    spark.animate([
+      { transform: 'translate(-50%, -50%) scale(1)', opacity: 1 },
+      {
+        transform: `translate(calc(-50% + ${(Math.cos(a) * d).toFixed(1)}px), calc(-50% + ${(Math.sin(a) * d).toFixed(1)}px)) scale(0.2)`,
+        opacity: 0,
+      },
+    ], {
+      duration: 520 + Math.random() * 280,
+      easing: 'cubic-bezier(0.16, 1, 0.3, 1)',
+    }).onfinish = () => spark.remove();
+  }
+}
+
+async function rollOracle() {
+  if (!introDone || casting) return;
 
   // 保底让乾、坤更容易出现，其余均匀
   const roll = Math.random();
@@ -711,7 +873,17 @@ function rollOracle() {
   const hex = hexagrams.find((h) => h.number === num);
   if (!hex) return;
 
+  // 星阵先反应，签在飞的过程中就能看到选中那一卦亮起来
   selectHexagram(num, true);
+
+  casting = true;
+  oracleBtn.classList.add('is-casting');
+  try {
+    await playSignRitual();
+  } finally {
+    casting = false;
+    oracleBtn.classList.remove('is-casting');
+  }
 
   blindboxCover.classList.remove('is-shaking');
   void blindboxCover.offsetWidth;
@@ -723,7 +895,6 @@ function rollOracle() {
   blindboxInterpretation.textContent = hex.interpretation;
 
   blindboxModal.classList.add('is-on');
-  flash(0.5);
   beamPulse();
 }
 
@@ -1500,8 +1671,7 @@ async function saveApiFromModal() {
     showToast('神谕已接通');
     setTimeout(() => {
       closeApiModal();
-      const hex = hexagrams.find((h) => h.number === selectedHexNum);
-      if (hex) requestAiTexts(hex);
+      renderDivineBar();
     }, 900);
   } catch (err) {
     isAiOn = !!getApiConfig().apiKey;
@@ -1540,9 +1710,8 @@ async function probeServerCredentials() {
     aiFromServer = true;
     serverModel = probe.model;
     syncApiState();
-    // 探活结果晚于首屏，重新拉一次当前卦的解读
-    const hex = hexagrams.find((h) => h.number === selectedHexNum);
-    if (hex) requestAiTexts(hex);
+    // 只把"现在可以通神了"刷出来，不自动调用
+    renderDivineBar();
   }
 }
 

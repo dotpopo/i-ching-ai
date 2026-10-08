@@ -795,25 +795,88 @@ canvas { display: block; }
 }
 @keyframes caretBlink { 50% { opacity: 0; } }
 
-.oracle-status {
-  display: none;
+/* ---------- 9b. 主动通神 ---------- */
+.divine-bar {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
-  font-size: 12px;
-  line-height: 1.65;
+  gap: 11px;
+  padding: 10px 12px;
   border-radius: var(--r-md);
-  background: rgba(232, 56, 79, 0.1);
-  border: 1px solid rgba(232, 56, 79, 0.32);
-  color: var(--crimson-lit);
-  word-break: break-word;
+  background: linear-gradient(100deg, rgba(240, 200, 105, 0.09), rgba(5, 8, 15, 0.4));
+  border: 1px solid rgba(240, 200, 105, 0.2);
+  transition: border-color var(--dur) var(--ease-out), background var(--dur) var(--ease-out);
 }
-.oracle-status.is-on { display: flex; }
-.oracle-status.is-ok {
-  background: var(--mint-veil);
+.divine-seal {
+  display: grid;
+  place-items: center;
+  inline-size: 34px;
+  block-size: 34px;
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink-950);
+  background: linear-gradient(140deg, var(--gold-lit), var(--gold) 55%, var(--gold-deep));
+  border-radius: 50%;
+  box-shadow: 0 0 16px rgba(240, 200, 105, 0.3);
+}
+.divine-text { display: grid; gap: 2px; flex: 1; min-inline-size: 0; }
+.divine-text b {
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--gold-lit);
+}
+.divine-text span { font-size: 11.5px; line-height: 1.55; color: var(--paper-muted); }
+
+.divine-btn {
+  flex-shrink: 0;
+  padding: 9px 17px;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-indent: 0.18em;
+  color: var(--ink-950);
+  background: linear-gradient(135deg, var(--gold-lit), var(--gold) 55%, var(--crimson-lit));
+  border-radius: var(--r-md);
+  box-shadow: 0 6px 20px rgba(232, 56, 79, 0.24);
+  transition: all var(--dur) var(--ease-out);
+}
+.divine-btn:hover { box-shadow: 0 8px 28px rgba(240, 200, 105, 0.4); }
+.divine-btn:active { scale: 0.97; }
+.divine-btn:disabled { opacity: 0.62; cursor: progress; scale: 1; }
+
+.divine-bar.is-loading { border-color: rgba(240, 200, 105, 0.45); }
+.divine-bar.is-loading .divine-seal { animation: corePulse 1.4s var(--ease-in-out) infinite; }
+
+.divine-bar.is-done {
+  background: linear-gradient(100deg, rgba(94, 234, 212, 0.1), rgba(5, 8, 15, 0.4));
   border-color: rgba(94, 234, 212, 0.34);
-  color: var(--mint);
 }
+.divine-bar.is-done .divine-seal {
+  background: linear-gradient(140deg, #9ff5e4, var(--mint) 55%, #2aa894);
+  box-shadow: 0 0 16px rgba(94, 234, 212, 0.35);
+}
+.divine-bar.is-done .divine-text b { color: var(--mint); }
+.divine-bar.is-done .divine-btn {
+  color: var(--paper-dim);
+  background: none;
+  border: 1px solid rgba(94, 234, 212, 0.3);
+  box-shadow: none;
+}
+.divine-bar.is-done .divine-btn:hover { color: var(--mint); border-color: rgba(94, 234, 212, 0.6); }
+
+.divine-bar.is-error {
+  background: linear-gradient(100deg, rgba(232, 56, 79, 0.12), rgba(5, 8, 15, 0.4));
+  border-color: rgba(232, 56, 79, 0.36);
+}
+.divine-bar.is-error .divine-seal {
+  background: linear-gradient(140deg, var(--crimson-lit), var(--crimson) 55%, var(--crimson-deep));
+  color: var(--paper);
+}
+.divine-bar.is-error .divine-text b { color: var(--crimson-lit); }
 
 .panel-actions { display: flex; gap: 9px; }
 
@@ -1121,6 +1184,71 @@ canvas { display: block; }
   letter-spacing: 0.2em;
   color: rgba(139, 135, 121, 0.7);
 }
+.oracle-btn.is-casting { pointer-events: none; }
+.oracle-btn.is-casting .oracle-halo { border-style: solid; border-color: rgba(255, 233, 168, 0.9); }
+
+/* ---------- 13b. 求签仪式：签从按钮里飞出、坠落、落定化卡 ---------- */
+.sign-stick {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  z-index: 66;
+  border-radius: 11px 11px 5px 5px;
+  background: linear-gradient(180deg, #fff3cd 0%, #f0c869 14%, #b98c2c 52%, #7d5c1c 100%);
+  box-shadow:
+    0 0 18px rgba(240, 200, 105, 0.7),
+    0 0 48px rgba(232, 56, 79, 0.35);
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+/* 朱红签头 */
+.sign-stick::before {
+  content: '';
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline: 0;
+  block-size: 24%;
+  border-radius: 11px 11px 0 0;
+  background: linear-gradient(180deg, var(--crimson-lit), var(--crimson));
+}
+/* 签文刻字 */
+.sign-stick::after {
+  content: '签';
+  position: absolute;
+  inset-block-start: 54%;
+  inset-inline-start: 50%;
+  translate: -50% -50%;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(7, 11, 24, 0.72);
+}
+
+/* 落定那一刻的冲击波 */
+.sign-ring {
+  position: fixed;
+  z-index: 65;
+  inline-size: 120px;
+  block-size: 120px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 233, 168, 0.85);
+  box-shadow:
+    0 0 30px rgba(240, 200, 105, 0.6),
+    inset 0 0 30px rgba(232, 56, 79, 0.35);
+  pointer-events: none;
+}
+
+/* 溅出的火星 */
+.sign-spark {
+  position: fixed;
+  z-index: 65;
+  inline-size: 7px;
+  block-size: 7px;
+  border-radius: 50%;
+  background: var(--gold-lit);
+  box-shadow: 0 0 12px var(--gold);
+  pointer-events: none;
+}
 
 /* ---------- 14. 式神录 ---------- */
 #collection-bar {
@@ -1326,29 +1454,63 @@ canvas { display: block; }
   .header-actions { margin-inline-start: auto; }
   .icon-action { padding: 8px 11px; font-size: 11px; }
 
+  /* 面板整体抬到求签台上方。
+     之前只加 padding-bottom 是不够的：内容比可视区高时，那段留白会滚到屏幕外，
+     最后一排按钮照样被按钮压住。 */
   #info-panel, .side-panel {
     inset-block-start: auto;
-    inset-block-end: 0;
-    inset-inline: 0;
-    inline-size: 100%;
-    max-block-size: 74vh;
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    inset-block-end: 128px;
+    inset-inline: 10px;
+    inline-size: auto;
+    max-block-size: 62vh;
+    border-radius: var(--r-lg);
   }
-  #info-panel.is-closed, .side-panel.is-closed { translate: 0 calc(100% + 20px); }
-  /* 底部留出求签台的高度，否则最后一排按钮会被压住 */
-  .panel-body { padding-block-end: 108px; }
+  #info-panel.is-closed, .side-panel.is-closed { translate: 0 calc(100% + 40px); }
 
-  /* 求签台挪到右下，式神录回到左下，两者不再打架 */
-  #oracle-dock { inset-block-end: 18px; inset-inline-start: auto; inset-inline-end: 14px; }
-  .oracle-btn { inline-size: 74px; block-size: 74px; }
-  .oracle-ico { font-size: 22px; }
-  .oracle-tip { display: none; }
-  #collection-bar {
-    inset-inline-start: 14px;
-    inset-block-end: 26px;
-    max-inline-size: calc(100vw - 118px);
+  /* 面板内容在手机上一定装不下，所以按钮行吸底，保证任何时候都点得到 */
+  .panel-body { padding-block-end: 0; }
+  .panel-actions {
+    position: sticky;
+    inset-block-end: 0;
+    z-index: 3;
+    padding-block: 12px 14px;
+    background: linear-gradient(
+      180deg,
+      rgba(9, 14, 30, 0) 0%,
+      rgba(9, 14, 30, 0.94) 32%,
+      rgba(9, 14, 30, 0.99) 100%
+    );
   }
-  .bond-dot { inline-size: 31px; block-size: 31px; font-size: 13px; }
+
+  /* 求签台在手机上居中并抬高：原来贴在右下角，很容易看不到 */
+  #oracle-dock {
+    inset-block-end: 36px;
+    inset-inline-start: 50%;
+    inset-inline-end: auto;
+    translate: -50% 0;
+    gap: 6px;
+  }
+  .oracle-btn {
+    inline-size: 84px;
+    block-size: 84px;
+    /* 手机上给足对比度，别让它糊在背景里 */
+    box-shadow:
+      0 0 0 1px rgba(255, 233, 168, 0.75),
+      0 0 42px rgba(232, 56, 79, 0.55),
+      0 16px 40px rgba(0, 0, 0, 0.68);
+  }
+  .oracle-ico { font-size: 25px; }
+  .oracle-label { font-size: 12px; }
+  .oracle-tip { display: none; }
+
+  /* 式神录挪到顶栏下方。底部已经被求签台和面板占满，放不下了。 */
+  #collection-bar {
+    inset-block-start: 112px;
+    inset-block-end: auto;
+    inset-inline-start: 12px;
+    max-inline-size: calc(100vw - 24px);
+  }
+  .bond-dot { inline-size: 33px; block-size: 33px; font-size: 14px; }
 
   .hex-stage { grid-template-columns: 1fr; gap: 12px; }
   .hex-lines { align-items: center; }
@@ -1359,6 +1521,11 @@ canvas { display: block; }
   .hex-line.yang, .hex-line.yin { inline-size: 62px; }
   .result-name { font-size: 26px; }
   .nav-btn { padding: 7px 13px; }
+  /* 通神栏不换行：换行会让面板内容再高一截，按钮行就得靠滚动才够得着 */
+  .divine-bar { gap: 8px; padding: 9px 10px; }
+  .divine-seal { inline-size: 30px; block-size: 30px; font-size: 14px; }
+  .divine-text span { display: none; }
+  .divine-btn { padding: 9px 13px; letter-spacing: 0.1em; text-indent: 0.1em; }
 }
 
 /* 触摸设备：hover 规则只在真有指针时生效 */

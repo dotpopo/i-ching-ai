@@ -122,8 +122,18 @@
           <button class="ptab" data-view="plain" role="tab">白话</button>
           <button class="ptab" data-view="action" role="tab">行止</button>
         </div>
+
+        <!-- 主动通神：不点就不调 AI -->
+        <div class="divine-bar" id="divine-bar">
+          <span class="divine-seal" id="divine-seal" aria-hidden="true">神</span>
+          <div class="divine-text">
+            <b id="divine-title">未通神</b>
+            <span id="divine-sub">下面是内置解读。想让 AI 就这一卦展开，点右边。</span>
+          </div>
+          <button id="divine-btn" class="divine-btn">通 神</button>
+        </div>
+
         <div class="oracle-text" id="ai-text" aria-live="polite"></div>
-        <div class="oracle-status" id="ai-status"></div>
 
         <div class="panel-actions">
           <button id="collect-btn" class="ghost-btn"><span class="act-ico" aria-hidden="true">缘</span>结缘收藏</button>
