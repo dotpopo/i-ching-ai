@@ -105,8 +105,16 @@
         <div class="api-key-section" id="api-key-section">
           <h3>🔑 AI 密钥</h3>
           <div class="api-key-input-row">
-            <input class="api-key-input" id="api-key-input" type="password" placeholder="输入 DeepSeek API Key" />
+            <input class="api-key-input" id="api-key-input" type="password" placeholder="API Key" />
             <button class="api-key-save" id="api-key-save">保存</button>
+          </div>
+          <div class="api-key-input-row" style="margin-top:6px">
+            <input class="api-key-input" id="base-url-input" type="text" placeholder="Base URL (默认: https://api.deepseek.com)" />
+            <button class="api-key-save" id="base-url-save">保存</button>
+          </div>
+          <div class="api-key-input-row" style="margin-top:6px">
+            <input class="api-key-input" id="model-id-input" type="text" placeholder="Model ID (默认: deepseek-chat)" />
+            <button class="api-key-save" id="model-id-save">保存</button>
           </div>
           <div class="api-key-status" id="api-key-status">未配置 — 使用预设解读</div>
         </div>
