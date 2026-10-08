@@ -11,6 +11,8 @@ let selectedHexNum = 1;
 let collectedHexagrams = new Set<number>();
 let blindboxHexNum: number | null = null;
 let isAiConfigured = false;
+let infoPanelVisible = true;
+let mouseNearRightEdge = false;
 
 // DOM 引用
 const canvas = document.getElementById('three-canvas') as HTMLCanvasElement;
@@ -84,6 +86,16 @@ function bindEvents() {
     const nx = (e.clientX / window.innerWidth) * 2 - 1;
     const ny = -(e.clientY / window.innerHeight) * 2 + 1;
     scene.setMouse(nx, ny);
+
+    // 右侧边缘检测 — 鼠标靠近右边缘时显示信息面板
+    const nearRightEdge = e.clientX > window.innerWidth - 80;
+    if (nearRightEdge !== mouseNearRightEdge) {
+      mouseNearRightEdge = nearRightEdge;
+      if (!infoPanelVisible && mouseNearRightEdge) {
+        infoPanel.classList.remove('panel-closed');
+        infoPanelVisible = true;
+      }
+    }
   });
 
   window.addEventListener('click', (e) => {
@@ -119,7 +131,10 @@ function bindEvents() {
   });
 
   // 面板关闭
-  panelClose.addEventListener('click', () => infoPanel.classList.add('panel-closed'));
+  panelClose.addEventListener('click', () => {
+    infoPanel.classList.add('panel-closed');
+    infoPanelVisible = false;
+  });
   analysisClose.addEventListener('click', () => analysisPanel.classList.add('panel-closed'));
   tutorClose.addEventListener('click', () => tutorPanel.classList.add('panel-closed'));
 
@@ -166,10 +181,8 @@ function bindEvents() {
   // AI 解锁按钮
   aiUnlockBtn.addEventListener('click', () => {
     if (isAiConfigured) {
-      // 已配置，切换 AI 解读面板的显示
       switchTab('ai-tutor');
     } else {
-      // 未配置，打开配置弹窗
       showApiConfigModal();
     }
   });
@@ -185,11 +198,10 @@ function bindEvents() {
 
 // ===== API 配置弹窗 =====
 function showApiConfigModal() {
-  const config = getApiConfig();
-  // 所有输入框清空，不显示任何默认值
+  // 所有输入框彻底清空，不显示任何默认值
   modalApiKey.value = '';
-  modalBaseUrl.value = config.baseUrl || '';
-  modalModelId.value = config.modelId || '';
+  modalBaseUrl.value = '';
+  modalModelId.value = '';
   modalApiStatus.textContent = '';
   modalApiStatus.style.color = '';
   apiConfigModal.classList.add('visible');
@@ -254,7 +266,7 @@ function updateApiConfigUI() {
 function updateAiUnlockButton() {
   if (isAiConfigured) {
     aiUnlockBtn.classList.add('unlocked');
-    aiUnlockBtn.querySelector('.unlock-text')!.textContent = 'AI 解读已解锁';
+    aiUnlockBtn.querySelector('.unlock-text')!.textContent = '🔓 AI 解读已解锁';
     aiUnlockBtn.querySelector('.unlock-icon')!.textContent = '🔓';
     aiUnlockSection.style.display = 'none';
   } else {
@@ -301,6 +313,7 @@ function updateInfoPanel(num: number) {
   updateAiInterpretation(hex);
 
   infoPanel.classList.remove('panel-closed');
+  infoPanelVisible = true;
 }
 
 function updateAiInterpretation(hex: Hexagram) {
@@ -470,9 +483,12 @@ function switchTab(tab: 'explore' | 'analysis' | 'ai-tutor') {
   infoPanel.classList.add('panel-closed');
   analysisPanel.classList.add('panel-closed');
   tutorPanel.classList.add('panel-closed');
+  infoPanelVisible = false;
 
-  if (tab === 'explore') infoPanel.classList.remove('panel-closed');
-  else if (tab === 'analysis') {
+  if (tab === 'explore') {
+    infoPanel.classList.remove('panel-closed');
+    infoPanelVisible = true;
+  } else if (tab === 'analysis') {
     analysisPanel.classList.remove('panel-closed');
     drawChart(selectedHexNum);
   } else if (tab === 'ai-tutor') {
@@ -783,6 +799,7 @@ async function updateAITutor(hexNum: number) {
       `;
     }
   } else {
+    // 未配置 API Key 时，显示预设内容
     setTimeout(() => {
       aiMsg.innerHTML = `
         <span class="msg-avatar">AI</span>
@@ -871,6 +888,7 @@ function closeAllPanels() {
   infoPanel.classList.add('panel-closed');
   analysisPanel.classList.add('panel-closed');
   tutorPanel.classList.add('panel-closed');
+  infoPanelVisible = false;
 }
 
 function showToast(msg: string) {

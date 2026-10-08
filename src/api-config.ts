@@ -30,9 +30,18 @@ export function getApiConfig(): ApiConfig {
 
 /** 保存用户设置到 localStorage */
 export function saveApiConfig(config: Partial<ApiConfig>) {
-  if (config.baseUrl !== undefined) localStorage.setItem('iching_api_base_url', config.baseUrl)
-  if (config.modelId !== undefined) localStorage.setItem('iching_api_model_id', config.modelId)
-  if (config.apiKey !== undefined) localStorage.setItem('iching_api_key', config.apiKey)
+  if (config.baseUrl !== undefined) {
+    if (config.baseUrl) localStorage.setItem('iching_api_base_url', config.baseUrl)
+    else localStorage.removeItem('iching_api_base_url')
+  }
+  if (config.modelId !== undefined) {
+    if (config.modelId) localStorage.setItem('iching_api_model_id', config.modelId)
+    else localStorage.removeItem('iching_api_model_id')
+  }
+  if (config.apiKey !== undefined) {
+    if (config.apiKey) localStorage.setItem('iching_api_key', config.apiKey)
+    else localStorage.removeItem('iching_api_key')
+  }
 }
 
 /** 清除用户设置（恢复为环境变量默认值） */
