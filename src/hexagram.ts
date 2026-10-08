@@ -191,7 +191,7 @@ export class HexagramMesh {
     this.group.add(this.edgeGlow);
   }
 
-  update(elapsed: number, index: number, selectedNum: number) {
+  update(elapsed: number, index: number, selectedNum: number, hoveredNum: number | null = null) {
     // 弹入动画 — 符咒展开效果
     if (!this.spawnStarted) {
       this.spawnStarted = true;
@@ -209,15 +209,16 @@ export class HexagramMesh {
     }
 
     const isSelected = this.hexagram.number === selectedNum;
+    const isHovered = this.hexagram.number === hoveredNum;
 
     // 选中时的降临效果
     if (isSelected && this.selectProgress < 1) {
-      this.selectProgress = Math.min(this.selectProgress + 0.06, 1);
+      this.selectProgress = Math.min(this.selectProgress + 0.05, 1);
     } else if (!isSelected && this.selectProgress > 0) {
-      this.selectProgress = Math.max(this.selectProgress - 0.08, 0);
+      this.selectProgress = Math.max(this.selectProgress - 0.06, 0);
     }
 
-    const targetHighlight = isSelected ? 1 : 0;
+    const targetHighlight = isSelected ? 1 : (isHovered ? 0.3 : 0);
     this.highlightIntensity += (targetHighlight - this.highlightIntensity) * 0.08;
 
     // 更新发光强度
@@ -269,20 +270,34 @@ export class HexagramMesh {
 
     // 选中时浮动 + 旋转 + 脉动 + 降临效果
     if (isSelected) {
-      // 符咒降临 — 从上方缓缓下降
-      const descendOffset = (1 - this.selectProgress) * 2;
-      this.group.position.y = this.baseY + Math.sin(elapsed * 2) * 0.4 - descendOffset;
-      this.group.rotation.y += 0.015;
-      // 脉动缩放
-      const pulse = 1.4 + Math.sin(elapsed * 3) * 0.05 * this.selectProgress;
+      // 符咒降临 — 从上方缓缓下降（更 dramatic）
+      const descendOffset = (1 - this.selectProgress) * 4;
+      this.group.position.y = this.baseY + Math.sin(elapsed * 2) * 0.5 - descendOffset;
+      this.group.rotation.y += 0.02;
+      // 脉动缩放 — 更大更 dramatic
+      const pulse = 2.0 + Math.sin(elapsed * 3) * 0.08 * this.selectProgress;
       if (this.spawnProgress >= 1) {
         this.group.scale.setScalar(pulse);
       }
+      // 选中时光环旋转加速
+      if (this.glowRing.material instanceof THREE.MeshBasicMaterial) {
+        this.glowRing.rotation.z += 0.02;
+      }
+      if (this.outerRing.material instanceof THREE.MeshBasicMaterial) {
+        this.outerRing.rotation.z -= 0.015;
+      }
     } else {
+      // 未选中时 — 其他卦象微微变暗
+      const dimFactor = selectedNum !== 1 ? 0.7 : 1.0;
       this.group.position.y = this.baseY + Math.sin(elapsed * 0.5 + index * 0.15) * 0.15;
       this.group.rotation.y += 0.003;
       if (this.spawnProgress >= 1) {
-        this.group.scale.setScalar(1);
+        const hoverScale = isHovered ? 1.15 : 1.0;
+        this.group.scale.setScalar(hoverScale * dimFactor);
+      }
+      // 未选中时降低发光
+      if (this.auraPlane.material instanceof THREE.MeshBasicMaterial) {
+        this.auraPlane.material.opacity *= 0.95;
       }
     }
   }

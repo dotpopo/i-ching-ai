@@ -51,6 +51,37 @@ html, body {
   background: radial-gradient(ellipse at center, transparent 50%, rgba(5,3,8,0.7) 100%);
 }
 
+/* ===== 屏幕闪烁 ===== */
+#screen-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  background: radial-gradient(circle at center, rgba(232,197,71,0.4), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+/* ===== 悬停提示 ===== */
+#hover-tooltip {
+  position: fixed;
+  z-index: 150;
+  pointer-events: none;
+  background: rgba(15,8,12,0.95);
+  border: 1px solid var(--border-gold);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--gold);
+  font-family: var(--font-body);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  transform: translate(-50%, -150%);
+  white-space: nowrap;
+}
+
 /* ===== 顶部导航 ===== */
 #top-bar {
   position: fixed;

@@ -1,4 +1,5 @@
 /* ===== 易经 AI 学堂 — 主入口 ===== */
+import * as THREE from 'three';
 import { IChingScene } from './scene.js';
 import { hexagrams, generateHexagramStats } from './data.js';
 import type { Hexagram } from './data.js';
@@ -60,6 +61,8 @@ function init() {
     scene = new IChingScene(canvas, {
       onSelect: handleHexagramSelect,
       onHover: handleHexagramHover,
+      onOrbClick: handleOrbClick,
+      onOrbHover: handleOrbHover,
     });
     scene.start();
 
@@ -87,6 +90,11 @@ function bindEvents() {
     const ny = -(e.clientY / window.innerHeight) * 2 + 1;
     scene.setMouse(nx, ny);
 
+    // 更新悬停提示位置
+    const tooltip = document.getElementById('hover-tooltip')!;
+    tooltip.style.left = e.clientX + 'px';
+    tooltip.style.top = e.clientY + 'px';
+
     // 右侧边缘检测 — 鼠标靠近右边缘时显示信息面板
     const nearRightEdge = e.clientX > window.innerWidth - 80;
     if (nearRightEdge !== mouseNearRightEdge) {
@@ -101,8 +109,19 @@ function bindEvents() {
   window.addEventListener('click', (e) => {
     if (!scene) return;
     if (e.target instanceof HTMLElement && e.target.closest('#info-panel, #analysis-panel, #tutor-panel, #blindbox-modal, #share-card, #api-config-modal')) return;
+
+    // 检测中央球体点击 — 快速求签
+    if (scene.checkOrbClick()) {
+      handleOrbClick();
+      triggerScreenFlash();
+      return;
+    }
+
     const hovered = scene.updateRaycast();
-    if (hovered !== null) handleHexagramSelect(hovered);
+    if (hovered !== null) {
+      handleHexagramSelect(hovered);
+      triggerScreenFlash();
+    }
   });
 
   window.addEventListener('keydown', (e) => {
@@ -289,11 +308,66 @@ function handleHexagramSelect(num: number) {
   updateInfoPanel(num);
   drawChart(num);
   scene?.focusOnHexagram(num);
+  // 触发粒子爆发
+  const idx = hexagrams.findIndex((h) => h.number === num);
+  if (idx >= 0 && scene) {
+    const count = hexagrams.length;
+    const angle = (idx / count) * Math.PI * 2;
+    const radius = 18;
+    const x = Math.cos(angle) * radius;
+    const z = Math.sin(angle) * radius;
+    const y = Math.sin(angle * 2) * 1.2;
+    scene.triggerBurst(new THREE.Vector3(x, y, z));
+  }
   if (currentTab === 'ai-tutor') updateAITutor(num);
 }
 
 function handleHexagramHover(num: number | null) {
   document.body.style.cursor = num !== null ? 'pointer' : 'default';
+  updateHoverTooltip(num);
+}
+
+/** 中央球体点击 — 快速求签 */
+function handleOrbClick() {
+  performBlindBox();
+}
+
+/** 中央球体悬停 */
+function handleOrbHover(hovered: boolean) {
+  const tooltip = document.getElementById('hover-tooltip')!;
+  if (hovered) {
+    tooltip.textContent = '🔮 点击求签';
+    tooltip.style.opacity = '1';
+  } else {
+    tooltip.style.opacity = '0';
+  }
+}
+
+/** 悬停提示 */
+function updateHoverTooltip(num: number | null) {
+  const tooltip = document.getElementById('hover-tooltip')!;
+  if (num !== null) {
+    const hex = hexagrams.find((h) => h.number === num);
+    if (hex) {
+      tooltip.textContent = `第${num}卦「${hex.name}」`;
+      tooltip.style.opacity = '1';
+    }
+  } else if (!scene?.checkOrbClick()) {
+    // 如果不是悬停在卦象上，也不是中央球体，则隐藏
+    const orbHovered = document.getElementById('hover-tooltip')!.textContent === '🔮 点击求签';
+    if (!orbHovered) {
+      tooltip.style.opacity = '0';
+    }
+  }
+}
+
+/** 屏幕闪烁效果 */
+function triggerScreenFlash() {
+  const flash = document.getElementById('screen-flash')!;
+  flash.style.opacity = '0.3';
+  setTimeout(() => {
+    flash.style.opacity = '0';
+  }, 150);
 }
 
 // ===== 信息面板更新 =====

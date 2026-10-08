@@ -17,21 +17,39 @@ export class IChingScene {
   mouse: THREE.Vector2;
   selectedHexagram: number = 1;
   hoveredHexagram: number | null = null;
+  hoveredOrb: boolean = false;
   animationId: number = 0;
   isRunning: boolean = false;
   onHexagramSelect?: (num: number) => void;
   onHexagramHover?: (num: number | null) => void;
-
+  onOrbClick?: () => void;
+  onOrbHover?: (hovered: boolean) => void;
+  private burstParticles!: THREE.Points;
+  private burstPositions: Float32Array;
+  private burstVelocities: Float32Array;
+  private burstLife: Float32Array;
+  private burstActive: boolean = false;
+  private orbGlowRing!: THREE.Mesh;
 
   constructor(
     canvas: HTMLCanvasElement,
-    options?: { onSelect?: (num: number) => void; onHover?: (num: number | null) => void }
+    options?: {
+      onSelect?: (num: number) => void;
+      onHover?: (num: number | null) => void;
+      onOrbClick?: () => void;
+      onOrbHover?: (hovered: boolean) => void;
+    }
   ) {
     this.onHexagramSelect = options?.onSelect;
     this.onHexagramHover = options?.onHover;
+    this.onOrbClick = options?.onOrbClick;
+    this.onOrbHover = options?.onOrbHover;
     this.raycaster = new THREE.Raycaster();
     this.mouse = new THREE.Vector2(-999, -999);
     this.clock = new THREE.Clock();
+    this.burstPositions = new Float32Array(200 * 3);
+    this.burstVelocities = new Float32Array(200 * 3);
+    this.burstLife = new Float32Array(200);
 
     this.initRenderer(canvas);
     this.initScene();
@@ -42,7 +60,8 @@ export class IChingScene {
     this.createHexagrams();
     this.createParticles();
     this.createGround();
-    this.createVignette();
+    this.createBurstParticles();
+    this.createOrbGlowRing();
     this.setupResize();
   }
 
@@ -352,9 +371,61 @@ export class IChingScene {
     this.scene.add(gridHelper);
   }
 
-  /** 暗角效果 — 用 CSS overlay 实现更高效 */
-  private createVignette() {
-    // 暗角通过 CSS overlay 实现，不在此处创建
+  /** 选中时的粒子爆发效果 */
+  private createBurstParticles() {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.burstPositions, 3));
+
+    const mat = new THREE.PointsMaterial({
+      color: 0xe8c547,
+      size: 0.15,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    this.burstParticles = new THREE.Points(geo, mat);
+    this.burstParticles.visible = false;
+    this.scene.add(this.burstParticles);
+  }
+
+  /** 中央球体悬停光环 */
+  private createOrbGlowRing() {
+    const ringGeo = new THREE.TorusGeometry(3.0, 0.03, 16, 100);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xe8c547,
+      transparent: true,
+      opacity: 0,
+    });
+    this.orbGlowRing = new THREE.Mesh(ringGeo, ringMat);
+    this.orbGlowRing.position.set(0, 2, 0);
+    this.orbGlowRing.rotation.x = Math.PI / 2;
+    this.scene.add(this.orbGlowRing);
+  }
+
+  /** 触发粒子爆发 */
+  triggerBurst(position: THREE.Vector3) {
+    for (let i = 0; i < 200; i++) {
+      this.burstPositions[i * 3] = position.x;
+      this.burstPositions[i * 3 + 1] = position.y;
+      this.burstPositions[i * 3 + 2] = position.z;
+
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.random() * Math.PI;
+      const speed = Math.random() * 3 + 1;
+
+      this.burstVelocities[i * 3] = Math.sin(phi) * Math.cos(theta) * speed;
+      this.burstVelocities[i * 3 + 1] = Math.cos(phi) * speed;
+      this.burstVelocities[i * 3 + 2] = Math.sin(phi) * Math.sin(theta) * speed;
+
+      this.burstLife[i] = 1;
+    }
+
+    this.burstParticles.geometry.attributes.position.needsUpdate = true;
+    (this.burstParticles.material as THREE.PointsMaterial).opacity = 1;
+    this.burstParticles.visible = true;
+    this.burstActive = true;
   }
 
   setupResize() {
@@ -397,6 +468,24 @@ export class IChingScene {
   selectHexagram(num: number) {
     this.selectedHexagram = num;
     this.onHexagramSelect?.(num);
+    // 触发粒子爆发
+    const idx = hexagrams.findIndex((h) => h.number === num);
+    if (idx >= 0) {
+      const count = hexagrams.length;
+      const angle = (idx / count) * Math.PI * 2;
+      const radius = 18;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius;
+      const y = Math.sin(angle * 2) * 1.2;
+      this.triggerBurst(new THREE.Vector3(x, y, z));
+    }
+  }
+
+  /** 检测中央球体是否被点击 */
+  checkOrbClick(): boolean {
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const intersects = this.raycaster.intersectObject(this.centralOrb, false);
+    return intersects.length > 0;
   }
 
   /** 平滑移动相机到目标卦象 */
@@ -463,9 +552,9 @@ export class IChingScene {
       this.centralOrb.position.y = 2 + Math.sin(elapsed * 0.4) * 0.4;
     }
 
-    // 更新卦象动画
+    // 更新卦象动画（传入悬停卦象）
     this.hexagramMeshes.forEach((mesh, i) => {
-      mesh.update(elapsed, i, this.selectedHexagram);
+      mesh.update(elapsed, i, this.selectedHexagram, this.hoveredHexagram);
     });
 
     // 粒子缓慢旋转 + 浮动
@@ -474,11 +563,49 @@ export class IChingScene {
       this.particles.rotation.x = Math.sin(elapsed * 0.1) * 0.02;
     }
 
+    // 更新粒子爆发效果
+    if (this.burstActive) {
+      let allDead = true;
+      for (let i = 0; i < 200; i++) {
+        if (this.burstLife[i] > 0) {
+          allDead = false;
+          this.burstLife[i] -= delta * 1.5;
+          this.burstPositions[i * 3] += this.burstVelocities[i * 3] * delta;
+          this.burstPositions[i * 3 + 1] += this.burstVelocities[i * 3 + 1] * delta;
+          this.burstPositions[i * 3 + 2] += this.burstVelocities[i * 3 + 2] * delta;
+          this.burstVelocities[i * 3 + 1] -= delta * 2; // 重力
+        }
+      }
+      this.burstParticles.geometry.attributes.position.needsUpdate = true;
+      (this.burstParticles.material as THREE.PointsMaterial).opacity = Math.max(0, (this.burstParticles.material as THREE.PointsMaterial).opacity - delta * 1.5);
+      if (allDead || (this.burstParticles.material as THREE.PointsMaterial).opacity <= 0) {
+        this.burstActive = false;
+        this.burstParticles.visible = false;
+      }
+    }
+
+    // 更新中央球体悬停光环
+    if (this.orbGlowRing && this.orbGlowRing.material instanceof THREE.MeshBasicMaterial) {
+      const targetOpacity = this.hoveredOrb ? 0.4 : 0;
+      this.orbGlowRing.material.opacity += (targetOpacity - this.orbGlowRing.material.opacity) * 0.1;
+      this.orbGlowRing.rotation.z += delta * 0.5;
+    }
+
     // 射线检测
     const hovered = this.updateRaycast();
     if (hovered !== this.hoveredHexagram) {
       this.hoveredHexagram = hovered;
       this.onHexagramHover?.(hovered);
+    }
+
+    // 检测中央球体悬停
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const orbIntersects = this.raycaster.intersectObject(this.centralOrb, false);
+    const orbHovered = orbIntersects.length > 0;
+    if (orbHovered !== this.hoveredOrb) {
+      this.hoveredOrb = orbHovered;
+      this.onOrbHover?.(orbHovered);
+      document.body.style.cursor = orbHovered ? 'pointer' : 'default';
     }
 
     this.renderer.render(this.scene, this.camera);
