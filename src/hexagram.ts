@@ -195,8 +195,22 @@ export class HexagramTalisman {
     this.group.add(this.face);
 
     // 拾取用：略大一点的不可见平面，射线更好命中
-    const hitMat = new THREE.MeshBasicMaterial({ visible: false });
-    this.hitPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 4.5), hitMat);
+    // 拾取平面必须双面。
+    //
+    // 符卡是持续自转的（见 update()），转到背面时如果拾取平面是单面材质，
+    // three 的 checkIntersection 会把背面当作 backface 剔除掉
+    // （`material.side === FrontSide` 会作为 backfaceCulling 参数传给
+    //   ray.intersectTriangle），表现就是「正面点得中，转到背面怎么点都没反应」。
+    // 而可视面 buildFace 用的是 DoubleSide，所以看得见背面却点不中 —— 就是这个错配。
+    //
+    // 材质 visible:false 不影响射线拾取（Mesh.raycast 只看 material 是否存在、
+    // 不看 material.visible），但 material.side 会参与剔除，所以这个 DoubleSide 不能省。
+    // 拾取面只比纸面(2.3×4.0)大一点点。
+    // 原来是 2.8×4.5，比纸面宽出 22%，相邻符卡的拾取区互相重叠，
+    // 于是点 A 经常选中更近的 B。放大拾取区只是让"好点中"，
+    // 代价是"点错"——用户要的是点得准，所以贴着纸面走。
+    const hitMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+    this.hitPlane = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 4.2), hitMat);
     this.hitPlane.userData.hexagramNumber = this.hexagram.number;
     this.group.add(this.hitPlane);
   }

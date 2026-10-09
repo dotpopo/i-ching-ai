@@ -13,7 +13,31 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { hexagrams } from './data.js';
 import { HexagramTalisman } from './hexagram.js';
 
-const RING_RADIUS = 23;
+/**
+ * 星阵主环半径。
+ *
+ * 原来是 23，64 张的切向间距只有 23 × (2π/64) = 2.26，而符纸可视宽 2.3
+ * —— 等于符纸本身就在互相压着。实测桌面有 22/64 对相邻符卡在屏幕上重叠，
+ * 手机 27/64，所以点下去经常命中更近的那张。
+ * 放大到 32 之后最小切向间距 3.04，终于比纸面宽出一截。
+ */
+const RING_RADIUS = 34;
+/** 环半径扰动总幅度（原 ±2.9）。相邻两张半径差过大会在屏幕上叠到一起，是重叠的主因 */
+const RADIAL_SWING = 0.6;
+/** 结界壁半径：主环外缘再留 13 单位 */
+const BARRIER_RADIUS = RING_RADIUS + RADIAL_SWING + 13;
+/** 法阵盘半径：比结界壁再宽一点，让符咒看着是悬在盘上 */
+const FORMATION_RADIUS = RING_RADIUS + RADIAL_SWING + 17;
+/** 地面圆盘：只要盖住视野就行 */
+const FLOOR_RADIUS = FORMATION_RADIUS * 2.2;
+
+/** 相机环绕的注视点高度 */
+const CAM_TARGET_Y = 3;
+/** 相机俯角。越接近水平看，环在屏幕上的椭圆越扁，两侧符卡的间距就挤得越厉害 */
+const CAM_ELEVATION = (28 * Math.PI) / 180;
+/** 相机到阵心的距离。与主环半径绑定：环放大，相机同比例后撤，取景不变 */
+const CAM_DISTANCE = RING_RADIUS * 2.07;
+
 const WISP_COUNT = 150;
 const BURST_COUNT = 260;
 /** 渲染节流阈值：15ms 对应约 64fps 上限，60Hz 屏上仍逐帧渲染 */
@@ -23,10 +47,15 @@ const MIN_FRAME_MS = 15;
  * 第 i 张符咒在星阵里的位置。
  * 半径与高度都做非均匀扰动，让 64 张符咒读作"悬浮星阵"而不是"一圈篱笆"。
  * 选中爆发、相机对焦、建阵三处都用这一个函数，避免三份算法各自漂移。
+ *
+ * 注意半径扰动不能大：它直接决定相邻两张的屏幕距离。两个分量的比例
+ * （0.62 : 0.38）沿用了旧版 1.8 : 1.1 的形状，只是总幅度收到 RADIAL_SWING。
  */
 function talismanPos(i: number, count: number): THREE.Vector3 {
   const angle = (i / count) * Math.PI * 2;
-  const r = RING_RADIUS + Math.sin(angle * 3) * 1.8 + Math.cos(angle * 5 + 1.2) * 1.1;
+  const r = RING_RADIUS
+    + Math.sin(angle * 3) * RADIAL_SWING * 0.62
+    + Math.cos(angle * 5 + 1.2) * RADIAL_SWING * 0.38;
   const y = Math.sin(angle * 2) * 3.6 + Math.cos(angle * 3 + 0.6) * 2.0;
   return new THREE.Vector3(Math.cos(angle) * r, y, Math.sin(angle) * r);
 }
@@ -276,14 +305,22 @@ export class IChingScene {
   private initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x05080f);
-    this.scene.fog = new THREE.FogExp2(0x05080f, 0.0072);
+    // 密度随主环放大而调低：相机从 48 后撤到 66 之后，
+    // 原密度会把星阵糊掉一层（FogExp2 的衰减是深度的平方）
+    this.scene.fog = new THREE.FogExp2(0x05080f, 0.0055);
   }
 
   private initCamera() {
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(46, aspect, 0.1, 600);
-    this.camera.position.set(0, 17, 46);
-    this.camera.lookAt(0, 2, 0);
+    // 位置由 CAM_* 三个常量推出来，不写死坐标：
+    // 改主环半径时相机自动跟着后撤，取景比例不会漂。
+    this.camera.position.set(
+      0,
+      CAM_TARGET_Y + CAM_DISTANCE * Math.sin(CAM_ELEVATION),
+      CAM_DISTANCE * Math.cos(CAM_ELEVATION)
+    );
+    this.camera.lookAt(0, CAM_TARGET_Y, 0);
   }
 
   private initControls() {
@@ -291,11 +328,11 @@ export class IChingScene {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.055;
     this.controls.enablePan = false;
-    this.controls.minDistance = 14;
-    this.controls.maxDistance = 78;
+    this.controls.minDistance = CAM_DISTANCE * 0.28;
+    this.controls.maxDistance = CAM_DISTANCE * 1.55;
     this.controls.minPolarAngle = Math.PI * 0.12;
     this.controls.maxPolarAngle = Math.PI * 0.5;
-    this.controls.target.set(0, 2.5, 0);
+    this.controls.target.set(0, CAM_TARGET_Y, 0);
     this.controls.autoRotate = !this.reducedMotion;
     this.controls.autoRotateSpeed = 0.32;
     this.controls.update();
@@ -474,7 +511,7 @@ export class IChingScene {
     const tex = makeFormationTexture();
 
     const disc = new THREE.Mesh(
-      new THREE.CircleGeometry(38, 80),
+      new THREE.CircleGeometry(FORMATION_RADIUS, 80),
       new THREE.MeshBasicMaterial({
         map: tex,
         transparent: true,
@@ -493,7 +530,7 @@ export class IChingScene {
     // 地面用 Basic 材质：这里没有任何环境贴图，PBR 的高光本来也出不来，
     // 但每像素的金属度/粗糙度运算在软件渲染下要吃掉半个屏幕的开销。
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(90, 48),
+      new THREE.CircleGeometry(FLOOR_RADIUS, 48),
       new THREE.MeshBasicMaterial({ color: 0x060a16 })
     );
     floor.rotation.x = -Math.PI / 2;
@@ -591,7 +628,7 @@ export class IChingScene {
   /* ---------- 结界壁 ---------- */
   private createBarrier() {
     // 高度从 46 收到 30：可见的那条光带没变，但覆盖的屏幕面积少了三分之一
-    const geo = new THREE.CylinderGeometry(36, 36, 30, 48, 1, true);
+    const geo = new THREE.CylinderGeometry(BARRIER_RADIUS, BARRIER_RADIUS, 30, 48, 1, true);
 
     this.barrierUniforms = { uTime: { value: 0 } };
 
@@ -928,6 +965,50 @@ export class IChingScene {
 
     // 命中灵枢时就不再报卦象，避免悬停提示被"第 N 卦"覆盖掉
     return { hexagram: orb ? null : num, orb };
+  }
+
+  /**
+   * 兜底拾取：射线一张符卡都没打到时，取「投影中心离触点最近」的那张。
+   *
+   * 只在 pick() 失败之后才调用，所以不会抢走本来命中的目标。
+   * 存在的理由：手指比鼠标粗，落点经常擦着符卡边过去落在缝里。
+   * 没有这一层的话就是「点了完全没反应」，用户只能反复点。
+   *
+   * 判据用「像素距离 ÷ 该符卡的屏幕半径」而不是固定像素数：
+   * 远处的符卡在屏幕上本来就小，不该要求用户点得比近处更准。
+   */
+  pickNearest(clientX: number, clientY: number, maxRatio = 1.15): number | null {
+    const size = this.renderer.getSize(new THREE.Vector2());
+    const halfW = size.x / 2;
+    const halfH = size.y / 2;
+    const tanHalfFov = Math.tan((this.camera.fov * Math.PI) / 360);
+    /** 符纸 2.3×4.0 的半对角，用来估算它在屏幕上的半径 */
+    const paperHalfDiagonal = Math.hypot(1.15, 2.0);
+
+    const v = new THREE.Vector3();
+    let best: number | null = null;
+    let bestRatio = Infinity;
+
+    for (const t of this.talismans) {
+      t.group.getWorldPosition(v);
+      const dist = v.distanceTo(this.camera.position);
+      if (dist < 0.001) continue;
+      const screenRadius = (paperHalfDiagonal * halfH) / (tanHalfFov * dist);
+
+      v.project(this.camera);
+      if (v.z >= 1) continue; // 在相机背后
+
+      // NDC → 相对屏幕中心的像素偏移（NDC 的 y 向上，屏幕的 y 向下）
+      const dx = v.x * halfW - clientX;
+      const dy = -v.y * halfH - clientY;
+      const ratio = Math.hypot(dx, dy) / screenRadius;
+      if (ratio < bestRatio) {
+        bestRatio = ratio;
+        best = t.hexagram.number;
+      }
+    }
+
+    return bestRatio <= maxRatio ? best : null;
   }
 
   /** 灵枢被点击时的反馈：核心炸开一圈粒子，并短暂膨胀 */

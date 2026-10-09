@@ -3,7 +3,7 @@
    ============================================================ */
 import * as THREE from 'three';
 import { IChingScene } from './scene.js';
-import { hexagrams, generateHexagramStats } from './data.js';
+import { hexagrams, generateHexagramStats, TRIGRAMS } from './data.js';
 import type { Hexagram } from './data.js';
 import {
   getApiConfig,
@@ -241,28 +241,60 @@ function init() {
 function bindEvents() {
   introEnter.addEventListener('click', enterApp);
 
-  window.addEventListener('pointermove', (e) => {
-    if (!scene) return;
-    scene.setMouse(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1
+  /** 屏幕坐标 → NDC。pick() 读的是 scene.mouse，所以必须先瞄准再 pick。 */
+  const aimAt = (clientX: number, clientY: number) => {
+    scene?.setMouse(
+      (clientX / window.innerWidth) * 2 - 1,
+      -(clientY / window.innerHeight) * 2 + 1
     );
+  };
+
+  window.addEventListener('pointermove', (e) => {
+    aimAt(e.clientX, e.clientY);
     hoverTooltip.style.left = `${e.clientX}px`;
     hoverTooltip.style.top = `${e.clientY}px`;
   });
 
-  // 记录按下位置：拖动旋转视角时不该被当成点击
+  /* ---------- 画布点击：触摸与鼠标走同一条路 ----------
+   * 旧实现只在 pointermove 里更新射线坐标，选中判定挂在 click 上。
+   * 但触摸端一次干净的点击**不产生任何 pointermove**
+   * （实测事件序列只有 pointerdown → touchstart → pointerup → touchend → click），
+   * 于是 pick() 用的还是上一次拖动留下的旧坐标：
+   *   旧坐标落在空处 → 点了没反应，要点好几次；
+   *   旧坐标落在别的符卡上 → 选中的不是点的那张。
+   * 所以两处一起改：
+   *   1. pointerdown / pointerup 都用事件自带的坐标重新瞄准；
+   *   2. 选中判定从 click 挪到 pointerup，自己判「这是点击还是拖动」。
+   */
+  /** 手指抖动的容忍半径。旧值 6px 太紧，很多轻点被判成拖动直接吞掉 */
+  const TAP_MAX_MOVE_PX = 10;
+  /** 超过这个时长算长按 / 转视角，不算点击 */
+  const TAP_MAX_MS = 800;
+
   let downX = 0;
   let downY = 0;
+  let downAt = 0;
+  let tracking = false;
+
   canvas.addEventListener('pointerdown', (e) => {
+    if (!scene || !introDone) return;
     downX = e.clientX;
     downY = e.clientY;
+    downAt = performance.now();
+    tracking = true;
+    // 按下就瞄准。触摸端没有 hover，这一步让用户当场看到「要选的是哪张」
+    // —— 场景每帧自己会 pick()，下一帧高亮与提示条就跟着出来。
+    aimAt(e.clientX, e.clientY);
   });
 
-  canvas.addEventListener('click', (e) => {
-    if (!scene || !introDone) return;
-    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6) return; // 这是拖动
+  canvas.addEventListener('pointerup', (e) => {
+    if (!scene || !introDone || !tracking) return;
+    tracking = false;
+    if (e.button !== 0) return;                                                    // 只认主接触点
+    if (performance.now() - downAt > TAP_MAX_MS) return;                            // 长按
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > TAP_MAX_MOVE_PX) return; // 拖动
 
+    aimAt(e.clientX, e.clientY);
     const picked = scene.pick();
 
     // 灵枢优先。它就是阵心那个"结印求签"的入口，
@@ -275,8 +307,17 @@ function bindEvents() {
 
     if (picked.hexagram !== null) {
       selectHexagram(picked.hexagram, true);
+      return;
     }
+
+    // 射线一张都没打到：多半是手指擦着符卡边落进了缝里。
+    // 兜底取投影中心最近的那张，别让用户对着屏幕反复点。
+    const near = scene.pickNearest(e.clientX, e.clientY);
+    if (near !== null) selectHexagram(near, true);
   });
+
+  // 手势被系统抢走（来电、多指、浏览器返回手势）时别留下悬空状态
+  canvas.addEventListener('pointercancel', () => { tracking = false; });
 
   window.addEventListener('keydown', onKeyDown);
 
@@ -473,7 +514,9 @@ function onOrbHover(hovered: boolean) {
 function updatePanel(hex: Hexagram) {
   panelTitle.textContent = hex.name;
   hexNumber.textContent = `#${hex.number}`;
-  hexTrigrams.textContent = hex.chinese;
+  // 卦名全称 + 上下卦符号，让「☴上☰下」和六爻图能当场对照
+  hexTrigrams.textContent =
+    `${hex.chinese} · ${TRIGRAMS[hex.upper].glyph}上${TRIGRAMS[hex.lower].glyph}下`;
   hexNature.textContent = hex.nature;
   hexSymbol.textContent = hex.symbol;
 
@@ -544,6 +587,29 @@ function renderOracleText(withTypewriter: boolean) {
   step();
 }
 
+/* ---------- 神谕话术：把技术报错翻成界面口径 ----------
+ * AI 报错原来是原样抛给用户的（「AI 调用失败：请求超时（超过 45 秒）」），
+ * 在「天机星阵」这套氛围里很出戏。这里统一翻成神谕口径。
+ *
+ * 只翻译，不吞错：原始报错一律 console.warn 留档。
+ * 话术是给用户看的，排查靠控制台 —— 两者不要混在一起。
+ */
+const ORACLE_ERROR_SCRIPT: Array<{ test: RegExp; say: string }> = [
+  { test: /NO_SERVER_CREDENTIALS|还没有配好|未配置/,     say: '神谕尚未接通，点右上角「AI」填入密钥。' },
+  { test: /401|403|invalid_api_key|unauthorized|密钥/,  say: '神谕不认这枚印，点右上角「AI」重新填写密钥。' },
+  { test: /429|限流|rate.?limit|quota|额度/,             say: '问卜的人太多，仙官一时忙不过来，歇口气再通。' },
+  { test: /超时|timeout|abort/i,                         say: '天机推演太久，神谕暂且收了讯，稍后再通一次。' },
+  { test: /代理通道|proxy|network|fetch/i,               say: '神谕的回音没能接上，再通一次。' },
+  { test: /50\d|上游|网关|服务端/,                       say: '天机紊乱，卦象未能展开，再通一次。' },
+  { test: /没有解析到文本|非 JSON|响应体为空/,            say: '神谕回音散乱，未能成句，再通一次。' },
+];
+
+function oracleErrorSay(raw: string): string {
+  console.warn('[神谕] 原始报错：', raw);
+  return ORACLE_ERROR_SCRIPT.find((r) => r.test.test(raw))?.say
+    ?? '神谕此刻不应，稍后再通一次。';
+}
+
 /* ---------- 主动通神：四维解读 ---------- */
 /**
  * 通神是**用户主动动作**，不再自动触发。
@@ -557,7 +623,7 @@ async function divineHexagram() {
 
   if (!isAiOn) {
     divineState = 'error';
-    divineError = '神谕尚未接通。点右上角「AI」填入密钥，或让服务端配好 LLM_KEY。';
+    divineError = '神谕尚未接通，点右上角「AI」填入密钥。';
     renderDivineBar();
     return;
   }
@@ -629,7 +695,7 @@ async function divineHexagram() {
 
   // 网关可能慢到几十秒，超过 8 秒就告诉用户在等什么，别让人以为卡死了
   const slowHint = window.setTimeout(() => {
-    if (divineState === 'loading') divineSub.textContent = '网关响应较慢，仍在等待…';
+    if (divineState === 'loading') divineSub.textContent = '天机推演较慢，仍在等…';
   }, 8000);
 
   const { results, failed, lastError } = await callMany(prompts, getApiConfig());
@@ -643,15 +709,17 @@ async function divineHexagram() {
 
   if (failed === prompts.length) {
     divineState = 'error';
-    divineError = lastError || '未知错误';
+    divineError = oracleErrorSay(lastError || '未知错误');
     renderDivineBar();
     return;
   }
 
   oracleTexts = results as OracleTexts;
   divineState = 'done';
+  // 部分失败只报「哪几条没通上」，不把技术原因摆到台面上；原因进控制台。
+  if (failed > 0) console.warn('[神谕] 部分维度失败：', lastError);
   divineError = failed > 0
-    ? `其中 ${failed}/${prompts.length} 条失败，这几条仍是内置文本。原因：${lastError}`
+    ? `其中 ${failed}/${prompts.length} 条未能通神，这几条仍用内置解读。`
     : '';
   renderOracleText(true);
   renderDivineBar();
@@ -676,7 +744,7 @@ function renderDivineBar() {
 
   if (divineState === 'error') {
     divineTitle.textContent = '通神未成';
-    divineSub.textContent = divineError || '未知原因，可以再试一次。';
+    divineSub.textContent = divineError || '神谕此刻不应，稍后再通一次。';
     divineBtn.textContent = '重试';
     return;
   }
@@ -755,6 +823,35 @@ function closeSearch() {
   searchLayer.classList.add('is-hidden');
 }
 
+/* ---------- 搜索 ----------
+ * 匹配字段：卦序 / 卦名 / 卦名全称 / 卦性 / 上下卦 / 取象 / 古义。
+ *
+ * 为什么要做相关性排序：
+ * 原来是「任意字段包含子串」就命中，然后按卦序排列，再 slice(0, 12)。
+ * 八卦名本身就是上下卦的名字（例如「巽」），所以搜「巽」会命中 15 条
+ * ——所有含巽这一卦的卦。而巽卦自己按卦序排在第 13 位，正好被截断丢掉，
+ * 于是「搜卦名搜不到那一卦」。搜「风」「水」同理（16 条，巽 / 未济被截）。
+ *
+ * 修法两步：先按相关度打分排序，再截断。精确命中永远在最前面，
+ * 同一层的按卦序排，保证结果稳定。
+ */
+const SEARCH_MAX = 12;
+
+/** 分数越高越靠前；0 表示不命中 */
+function searchScore(hex: Hexagram, q: string): number {
+  if (String(hex.number) === q || `#${hex.number}` === q) return 100;
+  const name = hex.name.toLowerCase();
+  if (name === q) return 90;
+  if (name.startsWith(q)) return 80;
+  if (name.includes(q)) return 70;
+  if (hex.chinese.toLowerCase().includes(q)) return 60;
+  if (hex.nature.includes(q)) return 50;
+  if (hex.trigrams.some((t) => t.includes(q))) return 40;
+  if (hex.symbol.includes(q)) return 30;
+  if (hex.interpretation.toLowerCase().includes(q)) return 20;
+  return 0;
+}
+
 function runSearch() {
   const q = searchInput.value.trim().toLowerCase();
   searchResults.innerHTML = '';
@@ -763,18 +860,12 @@ function runSearch() {
     return;
   }
 
-  searchMatches = hexagrams.filter((h) => {
-    if (String(h.number) === q) return true;
-    if (`#${h.number}` === q) return true;
-    return (
-      h.name.includes(q) ||
-      h.chinese.toLowerCase().includes(q) ||
-      h.nature.includes(q) ||
-      h.symbol.includes(q) ||
-      h.interpretation.includes(q) ||
-      h.trigrams.some((t) => t.includes(q))
-    );
-  }).slice(0, 12);
+  searchMatches = hexagrams
+    .map((hex) => ({ hex, score: searchScore(hex, q) }))
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score || a.hex.number - b.hex.number)
+    .slice(0, SEARCH_MAX)
+    .map((r) => r.hex);
 
   searchCursor = 0;
   searchMatches.forEach((hex, i) => {
@@ -1298,7 +1389,7 @@ async function generateAnswer() {
       hex,
       question,
       `${hex.interpretation}\n\n就你问的这件事，${hex.name}卦的意思偏向「${hex.symbol}」。`,
-      `AI 调用失败：${(err as Error)?.message || '未知错误'}`
+      oracleErrorSay((err as Error)?.message || '未知错误')
     );
   } finally {
     generateBtn.disabled = false;

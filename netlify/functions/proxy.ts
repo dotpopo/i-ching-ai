@@ -119,7 +119,7 @@ const handler: Handler = async (event) => {
     const targetUrl = `${baseUrl}/v1/chat/completions`;
 
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 90_000);
+    const timer = setTimeout(() => controller.abort(), 45_000);
 
     let upstream: Response;
     try {
@@ -163,7 +163,7 @@ const handler: Handler = async (event) => {
     };
   } catch (err: unknown) {
     const e = err as { name?: string; message?: string };
-    const msg = e?.name === 'AbortError' ? '上游请求超时（90 秒）' : e?.message || '代理内部错误';
+    const msg = e?.name === 'AbortError' ? '上游请求超时（45 秒）' : e?.message || '代理内部错误';
     return {
       statusCode: 502,
       body: JSON.stringify({ error: msg }),

@@ -134,7 +134,7 @@ function apiProxyPlugin(env: Record<string, string | undefined>): Plugin {
             console.log('[API Proxy] 目标 URL:', targetUrl);
 
             const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 90_000);
+            const timer = setTimeout(() => controller.abort(), 45_000);
 
             let upstream: Response;
             try {
@@ -171,7 +171,7 @@ function apiProxyPlugin(env: Record<string, string | undefined>): Plugin {
             send(upstream.status, parsed);
           } catch (err) {
             const e = err as { name?: string; message?: string };
-            const msg = e?.name === 'AbortError' ? '上游请求超时（90 秒）' : (e?.message || '代理内部错误');
+            const msg = e?.name === 'AbortError' ? '上游请求超时（45 秒）' : (e?.message || '代理内部错误');
             console.error('[API Proxy] 失败:', msg);
             send(502, { error: msg });
           }
@@ -199,6 +199,15 @@ export default defineConfig(() => {
     server: {
       port: 3000,
       open: false,
+      // 绑 0.0.0.0，手机走局域网或 cloudflared 快速隧道都能连
+      host: true,
+      /**
+       * Vite 5.4.12+ 默认开启 Host 头校验（防 DNS rebinding），
+       * 隧道域名不在白名单就直接 403「Blocked request. This host is not allowed」。
+       * 快速隧道的域名每次随机（xxx.trycloudflare.com），
+       * 所以用前导点的通配，只写死一个下次还得改。
+       */
+      allowedHosts: ['localhost', '127.0.0.1', '.trycloudflare.com'],
     },
   };
 });

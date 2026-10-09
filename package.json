@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "verify:hexagrams": "node --experimental-strip-types tools/verify-hexagrams.mjs",
+    "test": "npm run verify:hexagrams"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",

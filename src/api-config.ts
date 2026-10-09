@@ -35,8 +35,15 @@ const LS_MODEL = 'iching_api_model_id'
 
 const DEFAULT_BASE = 'https://api.deepseek.com'
 const DEFAULT_MODEL = 'deepseek-chat'
-/** 网关实测可能慢到几十秒（同一密钥从 0.9s 到 55s 都出现过），超时要留足 */
-const REQUEST_TIMEOUT_MS = 90_000
+/**
+ * 超时上限 45 秒（用户要求）。
+ *
+ * 网关实测波动极大（同一密钥 0.9s 到 55s 都出现过），所以这个值是有代价的：
+ * 最慢的那几次仍会被主动掐断，用户看到的是「天机推演太久，神谕暂且收了讯」。
+ * 这是有意的取舍 —— 宁可快速失败并给出体面的说法，也不要让人干等一分半。
+ * 要改，这里、netlify/functions/proxy.ts、vite.config.ts 三处一起改。
+ */
+const REQUEST_TIMEOUT_MS = 45_000
 
 /**
  * 从 localStorage 构建用户自带配置。
